@@ -1025,29 +1025,43 @@ function processPayment() {
             tray_units_type: typeof pendingOrderPayload?.tray_units,
         });
         // #endregion
-        socket.emit('submit_customer_order', pendingOrderPayload, (ack) => {
-            // #region agent log
+        const payloadSnapshot = pendingOrderPayload;
+        const ackTimer = setTimeout(() => {
+            console.warn('[DBG-6c0e34][H-A] submit_customer_order ACK TIMEOUT after 5s', {connected: socket.connected});
+            alert('Connection to the restaurant failed. Please retry.');
+            btn.textContent = 'Pay and Send Order';
+            btn.disabled = false;
+        }, 5000);
+
+        socket.emit('submit_customer_order', payloadSnapshot, (ack) => {
+            clearTimeout(ackTimer);
             console.log('[DBG-6c0e34][H-A] submit_customer_order ACK from server', ack);
-            // #endregion
+
+            if (!ack || ack.ok === false) {
+                alert('Order rejected by server: ' + ((ack && ack.message) || 'unknown error'));
+                btn.textContent = 'Pay and Send Order';
+                btn.disabled = false;
+                return;
+            }
+
+            sentOrders.unshift(payloadSnapshot.order_id);
+            document.getElementById('orderRef').textContent = `#${payloadSnapshot.order_id}`;
+            goToScreen('confirm');
+            resetProgressDots();
+            updateOrderStatus('preparing');
+            renderLoadSummary('confirmLoadSummary');
+
+            cart = {};
+            pendingOrderPayload = null;
+            document.getElementById('orderNotes').value = '';
+            updateCartPill();
+            renderMenu();
+            renderCart();
+
+            showToast(`${walletLabel} payment confirmed. Order sent!`);
+            btn.textContent = 'Pay and Send Order';
+            btn.disabled = false;
         });
-
-        sentOrders.unshift(pendingOrderPayload.order_id);
-        document.getElementById('orderRef').textContent = `#${pendingOrderPayload.order_id}`;
-        goToScreen('confirm');
-        resetProgressDots();
-        updateOrderStatus('preparing');
-        renderLoadSummary('confirmLoadSummary');
-
-        cart = {};
-        pendingOrderPayload = null;
-        document.getElementById('orderNotes').value = '';
-        updateCartPill();
-        renderMenu();
-        renderCart();
-
-        showToast(`${walletLabel} payment confirmed. Order sent!`);
-        btn.textContent = 'Pay and Send Order';
-        btn.disabled = false;
     }, 1800);
 }
 
