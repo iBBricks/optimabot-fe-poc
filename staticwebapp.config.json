@@ -2,34 +2,19 @@
   "routes": [
     {
       "route": "/",
-      "redirect": "/kds/",
+      "redirect": "/kds",
       "statusCode": 302
     },
     {
       "route": "/kds",
-      "redirect": "/kds/",
-      "statusCode": 301
-    },
-    {
-      "route": "/waiter",
-      "redirect": "/waiter/",
-      "statusCode": 301
-    },
-    {
-      "route": "/customer",
-      "redirect": "/customer/",
-      "statusCode": 301
-    },
-    {
-      "route": "/kds/",
       "rewrite": "/kds/index.html"
     },
     {
-      "route": "/waiter/",
+      "route": "/waiter",
       "rewrite": "/waiter/index.html"
     },
     {
-      "route": "/customer/",
+      "route": "/customer",
       "rewrite": "/customer/index.html"
     }
   ],
