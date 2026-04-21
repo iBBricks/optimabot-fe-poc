@@ -635,7 +635,41 @@ let pendingOrderPayload = null;
 // ── SOCKET ───────────────────────────────────────────────
 const socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
 
-socket.on('connect', () => console.log('[Customer App] Connected'));
+socket.on('connect', () => {
+    console.log('[Customer App] Connected, subscribing to table', TABLE_ID);
+    // Tell the backend which table this client is on so it can replay the
+    // current order state (status, robot assigned, awaiting pickup) only
+    // for this table. Re-fired by `applyTableId` whenever the user switches
+    // table from the picker.
+    socket.emit('customer_subscribe', { table_id: TABLE_ID });
+});
+
+// Per-table state replay arriving in response to `customer_subscribe`.
+// Idempotent rehydrate of the order screen so a browser reload restores
+// "Robot dispatched", "Robot at table", etc., without losing context.
+socket.on('customer_state_snapshot', (snap) => {
+    if (!snap || parseInt(snap.table_id, 10) !== TABLE_ID) return;
+    console.log('[Customer App] state_snapshot', snap);
+    const status = snap.status;
+    const robotId = snap.robot_id;
+    if (snap.awaiting_pickup) {
+        updateOrderStatus('arrived', null, robotId);
+        if (snap.zone === 'A') {
+            const btn = document.getElementById('pickupDoneBtn');
+            if (btn) btn.classList.add('visible');
+        }
+    } else if (status === 'picked_up') {
+        if (snap.zone === 'B' && snap.robot_state && snap.robot_state !== 'returning') {
+            updateOrderStatus('waiter', snap.time_left || null);
+        } else {
+            updateOrderStatus('dispatched');
+        }
+    } else if (status === 'preparing') {
+        updateOrderStatus('preparing');
+    } else if (status === 'ready') {
+        updateOrderStatus('preparing');
+    }
+});
 
 socket.on('tables_dispatched', (dispatchedTableIds) => {
     if (dispatchedTableIds.map(id => parseInt(id, 10)).includes(TABLE_ID)) {
@@ -685,6 +719,10 @@ function applyTableId(n) {
         btn.classList.toggle('active', parseInt(btn.dataset.table, 10) === TABLE_ID);
     });
     showToast(`Table ${TABLE_ID} selected`);
+    // Resubscribe so we receive the snapshot for the newly selected table.
+    if (socket && socket.connected) {
+        socket.emit('customer_subscribe', { table_id: TABLE_ID });
+    }
 }
 
 function openTablePicker() {

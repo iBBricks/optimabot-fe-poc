@@ -275,6 +275,23 @@
             tables.push({ id: i, zone: i <= 6 ? 'A' : 'B', status: 'waiting_order', size: 1, eta_seconds: null });
         }
 
+        // Server pushes the canonical table state at every (re)connect via
+        // `tables_snapshot`. We swap the local array in-place so the rest of
+        // the rendering loop keeps the same reference.
+        socket.on('tables_snapshot', (snap) => {
+            if (!Array.isArray(snap)) return;
+            tables.length = 0;
+            snap.forEach(t => tables.push({
+                id: t.id,
+                zone: t.zone,
+                status: t.status,
+                size: t.size,
+                eta_seconds: t.eta_seconds,
+            }));
+            renderGrid();
+            if (selectedTableId) selectTable(selectedTableId);
+        });
+
         setInterval(() => {
             tables.forEach(t => { if(t.status === 'preparing') t.eta_seconds--; });
             renderGrid();

@@ -89,6 +89,38 @@
             renderTasks();
         });
 
+        // Server replays the active Zone B missions whenever the socket
+        // (re)connects, so the waiter never loses cards on a browser reload.
+        // Missions are keyed by (robot_id, table_id); existing local entries
+        // for the same key are kept (they carry the user's `unloaded` flag).
+        socket.on('waiter_missions_snapshot', (cards) => {
+            if (!Array.isArray(cards)) return;
+            const byKey = new Map(activeTasks.map(t => [`${t.robot_id}:${t.table_id}`, t]));
+            const fresh = [];
+            cards.forEach(c => {
+                const key = `${c.robot_id}:${c.table_id}`;
+                const local = byKey.get(key);
+                if (local) {
+                    local.timeLeft = c.timeLeft;
+                    local.awaitingUnload = c.awaitingUnload || local.awaitingUnload;
+                    fresh.push(local);
+                } else {
+                    fresh.push({
+                        id: c.id,
+                        table_id: c.table_id,
+                        robot_id: c.robot_id,
+                        timeLeft: c.timeLeft,
+                        awaitingUnload: !!c.awaitingUnload,
+                        unloaded: false,
+                    });
+                }
+            });
+            activeTasks = fresh;
+            // Force re-render from scratch (avoid stale DOM ids from previous mount).
+            document.getElementById('taskList').innerHTML = '<div id="emptyState" style="text-align:center; color:#64748b; margin-top:50px;">On Floor Duty.<br>Awaiting Intercept Alerts.</div>';
+            renderTasks();
+        });
+
         socket.on('robot_arrived_at_table', (payload) => {
             const tableId = parseInt(payload.table_id);
             const robotId = payload.robot_id;
