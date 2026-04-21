@@ -2,32 +2,35 @@
   "routes": [
     {
       "route": "/",
-      "redirect": "/kds",
+      "redirect": "/kds/",
       "statusCode": 302
     },
     {
       "route": "/kds",
-      "rewrite": "/kds/index.html"
+      "redirect": "/kds/",
+      "statusCode": 301
     },
     {
       "route": "/waiter",
-      "rewrite": "/waiter/index.html"
+      "redirect": "/waiter/",
+      "statusCode": 301
     },
     {
       "route": "/customer",
+      "redirect": "/customer/",
+      "statusCode": 301
+    },
+    {
+      "route": "/kds/",
+      "rewrite": "/kds/index.html"
+    },
+    {
+      "route": "/waiter/",
+      "rewrite": "/waiter/index.html"
+    },
+    {
+      "route": "/customer/",
       "rewrite": "/customer/index.html"
-    },
-    {
-      "route": "/kds/config.js",
-      "rewrite": "/kds/config.js"
-    },
-    {
-      "route": "/waiter/config.js",
-      "rewrite": "/waiter/config.js"
-    },
-    {
-      "route": "/customer/config.js",
-      "rewrite": "/customer/config.js"
     }
   ],
   "navigationFallback": {
@@ -49,6 +52,7 @@
     "Referrer-Policy": "strict-origin-when-cross-origin"
   },
   "mimeTypes": {
-    ".json": "application/json"
+    ".json": "application/json",
+    ".js": "application/javascript"
   }
 }
