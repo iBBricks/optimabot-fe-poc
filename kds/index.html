@@ -1,0 +1,464 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimabot KDS</title>
+    <script src="config.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root { --bg: #f8fafc; --card: #ffffff; --primary: #3b82f6; --ready: #22c55e; --preparing: #f59e0b; --text: #0f172a; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: grid; grid-template-columns: 1fr 320px; gap: 20px; height: 100vh; box-sizing: border-box;}
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; align-content: start; }
+        .table-card { background: var(--card); border-radius: 12px; padding: 15px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); cursor: pointer; border-left: 6px solid transparent; transition: transform 0.1s;}
+        .table-card:hover { transform: translateY(-2px); }
+        
+        .status-waiting_order { border-left-color: #cbd5e1; background: #f8fafc; }
+        .status-preparing { border-left-color: var(--preparing); } 
+        .status-ready { border-left-color: var(--ready); background: #dcfce7; }
+        .status-picked_up { border-left-color: #64748b; opacity: 0.6; background: #f1f5f9; }
+
+        .zone-badge { font-size: 0.7rem; background: #e2e8f0; padding: 3px 6px; border-radius: 6px; float: right;}
+        .size-badge { font-size: 0.75rem; background: #e0e7ff; color: #4338ca; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-bottom: 5px; display: inline-block;}
+        
+        .action-panel { background: var(--card); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; margin-bottom: 10px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-ready { background: var(--ready); color: white;} 
+        .btn-predictive { background: #8b5cf6; color: white; }
+        .btn-reset { background: #475569; color: white;}
+        .alert-banner { background: #1e293b; color: #facc15; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; display: none;}
+        
+        .size-selector { display: flex; gap: 5px; margin-bottom: 15px; }
+        .size-btn { flex: 1; padding: 8px; border: 1px solid #cbd5e1; background: white; border-radius: 6px; cursor: pointer; font-weight: bold; color: #64748b;}
+        .size-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        
+        .toggle-container { display: flex; align-items: center; justify-content: space-between; background: #f1f5f9; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
+        .toggle-label { font-size: 0.85rem; font-weight: bold; color: #475569; }
+        .switch { position: relative; display: inline-block; width: 40px; height: 22px; margin: 0;}
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; border-radius: 22px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(18px); }
+
+        .control-btn { padding: 4px 10px; font-weight: bold; border-radius: 6px; border: 1px solid #cbd5e1; cursor:pointer; background: white; color: #475569; }
+        .control-btn:active { background: #e2e8f0; }
+        input[type=range] { accent-color: var(--primary); height: 6px; background: #e2e8f0; border-radius: 5px; outline: none; }
+    </style>
+</head>
+<body>
+
+    <div>
+        <h1>Optimabot Kitchen Display (POC)</h1>
+        <div class="alert-banner" id="expeditorAlert"></div>
+        <div class="grid" id="tableGrid"></div>
+    </div>
+
+    <div class="action-panel">
+        <h2 id="selectedTableTitle">Select a Table</h2>
+        
+        <div id="actionButtons" style="display: none;">
+            
+            <div class="toggle-container">
+                <span class="toggle-label">Global Batching (Ignore Zones)</span>
+                <label class="switch">
+                    <input type="checkbox" id="crossZoneToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <label style="font-size: 0.85rem; font-weight: bold; color: #64748b; margin-bottom: 5px; display: block;">Edit Tray Capacity:</label>
+            <div class="size-selector" id="sizeSelector">
+                <button class="size-btn" id="sz-1" onclick="updateSize(1)">S (1)</button>
+                <button class="size-btn" id="sz-2" onclick="updateSize(2)">M (2)</button>
+                <button class="size-btn" id="sz-3" onclick="updateSize(3)">L (3)</button>
+                <button class="size-btn" id="sz-4" onclick="updateSize(4)">XL (4)</button>
+            </div>
+
+            <button class="btn btn-ready" id="btnReady" onclick="markReady()">Mark Dish Ready</button>
+            <button class="btn btn-predictive" id="btnPredictive" onclick="forcePredictive()">Drop ETA to 30s (Test ML)</button>
+            <button class="btn btn-reset" onclick="resetTable()">New Order (Reset)</button>
+            
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e2e8f0;">
+            
+            <div style="font-size: 0.85rem; color: #64748b; background: #f8fafc; padding: 10px; border-radius: 8px; margin-bottom: 15px;">
+                <strong>Fleet Management:</strong><br>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px; margin-bottom: 5px;">
+                    <button class="control-btn" onclick="changeFleet(-1)">-</button>
+                    <span id="fleetStatus" style="font-weight:bold; color:var(--text);">Idle: 2 / Total: 2</span>
+                    <button class="control-btn" onclick="changeFleet(1)">+</button>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--primary); font-weight: bold; margin-bottom: 5px;" id="idleRobotNames">
+                    Available: Robot-1, Robot-2
+                </div>
+                
+                <div id="activeRobotsList" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px;">
+                </div>
+                
+                <strong>Live ML Parameters:</strong><br>
+                <div style="margin-top: 10px; margin-bottom: 15px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+                        <span>Pickup Lookahead Window:</span>
+                        <span id="p-look" style="font-weight: bold; color: var(--text);">45s</span>
+                    </div>
+                    <input type="range" id="slider-look" min="0" max="120" step="5" value="45" style="width: 100%; cursor: pointer;" oninput="updateParamFromSlider('lookahead', this.value)">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+                        <span>Waiter Alert Timer (Zone A):</span>
+                        <span id="p-alert-a" style="font-weight: bold; color: var(--text);">30s</span>
+                    </div>
+                    <input type="range" id="slider-alert-a" min="0" max="120" step="5" value="30" style="width: 100%; cursor: pointer;" oninput="updateParamFromSlider('alertA', this.value)">
+                </div>
+
+                <div style="margin-bottom: 5px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+                        <span>Waiter Alert Timer (Zone B):</span>
+                        <span id="p-alert-b" style="font-weight: bold; color: var(--text);">30s</span>
+                    </div>
+                    <input type="range" id="slider-alert-b" min="0" max="120" step="5" value="30" style="width: 100%; cursor: pointer;" oninput="updateParamFromSlider('alertB', this.value)">
+                </div>
+            </div>
+
+        </div>
+        
+        <div style="margin-top: auto; padding-top: 20px;">
+            <hr style="margin: 0 0 15px 0; border: 0; border-top: 1px solid #e2e8f0;">
+            <div style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 15px; border-radius: 8px;">
+                <strong style="color: var(--text);">Pudu Hardware Tester:</strong><br>
+                <div style="display:flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                    <div style="background:#ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
+                        <div style="font-size: 0.75rem; font-weight: bold; color: #475569; margin-bottom: 8px;">Robot-1 Binding</div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Robot SN:</label>
+                            <input type="text" id="testSn" placeholder="e.g. 8170..." style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_sn', this.value)">
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Map Name:</label>
+                            <input type="text" id="testMap" placeholder="e.g. map1" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_map', this.value)">
+                        </div>
+                        <div id="bindingStatusCard" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 0.75rem; font-weight: bold; color: #475569; margin-bottom: 6px;">Active Robot-1 Binding</div>
+                            <div id="bindingStatusText" style="font-size: 0.78rem; color: #64748b; line-height: 1.4;">Waiting for server status...</div>
+                        </div>
+                    </div>
+                    <div style="background:#ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
+                        <div style="font-size: 0.75rem; font-weight: bold; color: #475569; margin-bottom: 8px;">Robot-2 Binding</div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Robot SN:</label>
+                            <input type="text" id="testSn2" placeholder="e.g. 8170..." style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_sn_2', this.value)">
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Map Name:</label>
+                            <input type="text" id="testMap2" placeholder="e.g. map1" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_map_2', this.value)">
+                        </div>
+                        <div id="bindingStatusCard2" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 0.75rem; font-weight: bold; color: #475569; margin-bottom: 6px;">Active Robot-2 Binding</div>
+                            <div id="bindingStatusText2" style="font-size: 0.78rem; color: #64748b; line-height: 1.4;">Waiting for server status...</div>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Point Name:</label>
+                        <input type="text" id="testPoint" placeholder="e.g. Andrea" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_point', this.value)">
+                    </div>
+                    <button class="btn" style="background: #0f172a; color: white; margin-bottom: 0; margin-top: 5px;" onclick="sendCustomCall()">Send Test Call</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const serverUrl = (window.OPTIMABOT_BACKEND_URL && window.OPTIMABOT_BACKEND_URL !== '__BACKEND_URL__')
+            ? window.OPTIMABOT_BACKEND_URL
+            : (window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin);
+        const socket = io(serverUrl, { transports: ['websocket', 'polling'] });
+        let tables = [];
+        let selectedTableId = null;
+        let currentFleetTotal = 2;
+        let currentLookahead = 45;
+        let currentAlertA = 30;
+        let currentAlertB = 30;
+        
+        const sizeMap = {1: 'S (1 Tray)', 2: 'M (2 Trays)', 3: 'L (3 Trays)', 4: 'XL (4 Trays)'};
+
+        // NEW: Load cached hardware tester parameters on page load
+        window.onload = () => {
+            if(sessionStorage.getItem('pudu_sn')) document.getElementById('testSn').value = sessionStorage.getItem('pudu_sn');
+            if(sessionStorage.getItem('pudu_map')) document.getElementById('testMap').value = sessionStorage.getItem('pudu_map');
+            if(sessionStorage.getItem('pudu_sn_2')) document.getElementById('testSn2').value = sessionStorage.getItem('pudu_sn_2');
+            if(sessionStorage.getItem('pudu_map_2')) document.getElementById('testMap2').value = sessionStorage.getItem('pudu_map_2');
+            if(sessionStorage.getItem('pudu_point')) document.getElementById('testPoint').value = sessionStorage.getItem('pudu_point');
+            syncHardwareBinding();
+        };
+
+        function handleHardwareInput(key, value) {
+            sessionStorage.setItem(key, value);
+            syncHardwareBinding();
+        }
+
+        function syncHardwareBinding() {
+            socket.emit('configure_robot_binding', {
+                robotName: 'Robot-1',
+                sn: document.getElementById('testSn').value.trim(),
+                mapName: document.getElementById('testMap').value.trim()
+            });
+            socket.emit('configure_robot_binding', {
+                robotName: 'Robot-2',
+                sn: document.getElementById('testSn2').value.trim(),
+                mapName: document.getElementById('testMap2').value.trim()
+            });
+        }
+
+        socket.on('connect', () => {
+            syncHardwareBinding();
+        });
+
+        socket.on('hardware_binding_status', (binding) => {
+            const text = binding?.robotName === 'Robot-2'
+                ? document.getElementById('bindingStatusText2')
+                : document.getElementById('bindingStatusText');
+            const hasBinding = binding?.sn && binding?.mapName;
+            if (hasBinding) {
+                text.innerHTML = `<strong>${binding.robotName}</strong><br>SN: ${binding.sn}<br>Map: ${binding.mapName}`;
+                text.style.color = '#166534';
+            } else {
+                text.textContent = `${binding?.robotName || 'Robot'} is not fully bound yet. Enter SN and Map Name to activate it.`;
+                text.style.color = '#b45309';
+            }
+        });
+
+        function formatTime(totalSeconds) {
+            if (totalSeconds === null || totalSeconds === undefined) return '--';
+            if (totalSeconds < 0) {
+                const absSec = Math.abs(totalSeconds);
+                const m = Math.floor(absSec / 60);
+                const s = absSec % 60;
+                return `LATE by ${m}m ${s < 10 ? '0' : ''}${s}s`;
+            }
+            const m = Math.floor(totalSeconds / 60);
+            const s = totalSeconds % 60;
+            return `${m}m ${s < 10 ? '0' : ''}${s}s`;
+        }
+
+        for (let i = 1; i <= 12; i++) {
+            tables.push({ id: i, zone: i <= 6 ? 'A' : 'B', status: 'waiting_order', size: 1, eta_seconds: null });
+        }
+
+        setInterval(() => {
+            tables.forEach(t => { if(t.status === 'preparing') t.eta_seconds--; });
+            renderGrid();
+        }, 1000);
+
+        function renderGrid() {
+            const grid = document.getElementById('tableGrid');
+            grid.innerHTML = '';
+            tables.forEach(table => {
+                let statusText = table.status.toUpperCase();
+                let statusColor = '#64748b';
+                let etaColor = '#64748b';
+                
+                if (table.status === 'ready') { 
+                    statusColor = 'var(--ready)'; 
+                } else if (table.status === 'waiting_order') {
+                    statusText = 'WAITING FOR ORDER';
+                    statusColor = '#64748b';
+                } else if (table.status === 'preparing') { 
+                    statusColor = 'var(--preparing)'; 
+                    if (table.eta_seconds < 0) {
+                        statusColor = '#ef4444'; etaColor = '#ef4444';
+                        statusText = 'OVERDUE (PREPARING)';
+                    }
+                } else if (table.status === 'picked_up') { 
+                    statusText = 'PICKED UP 🤖'; 
+                }
+
+                grid.innerHTML += `
+                    <div class="table-card status-${table.status}" onclick="selectTable(${table.id})" ${table.eta_seconds < 0 && table.status === 'preparing' ? 'style="border-left-color: #ef4444;"' : ''}>
+                        <span class="zone-badge">Zone ${table.zone}</span>
+                        <h3 style="margin: 0 0 5px 0;">Table ${table.id}</h3>
+                        <div class="size-badge">${sizeMap[table.size]}</div>
+                        <div style="font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; color: ${statusColor};">${statusText}</div>
+                        <div style="font-size: 0.9rem; font-weight: bold; color: ${etaColor};">ETA: ${table.status === 'preparing' ? formatTime(table.eta_seconds) : '--'}</div>
+                    </div>`;
+            });
+        }
+
+        function selectTable(id) {
+            selectedTableId = id;
+            document.getElementById('selectedTableTitle').innerText = `Managing Table ${id}`;
+            document.getElementById('actionButtons').style.display = 'block';
+            
+            const table = tables.find(t => t.id === id);
+            const isPreparing = table.status === 'preparing';
+            document.getElementById('btnReady').disabled = !isPreparing;
+            document.getElementById('btnPredictive').disabled = !isPreparing;
+
+            document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`sz-${table.size}`).classList.add('active');
+        }
+
+        function updateSize(newSize) {
+            if (!selectedTableId) return;
+            const table = tables.find(t => t.id === selectedTableId);
+            table.size = newSize; 
+            selectTable(selectedTableId); renderGrid(); 
+        }
+
+        function forcePredictive() {
+            if (!selectedTableId) return;
+            const table = tables.find(t => t.id === selectedTableId);
+            if (table.status === 'preparing') {
+                table.eta_seconds = 30; renderGrid(); selectTable(selectedTableId);
+            }
+        }
+
+        async function markReady() {
+            if (!selectedTableId) return;
+            const table = tables.find(t => t.id === selectedTableId);
+            table.status = 'ready';
+            const isCrossZoneEnabled = document.getElementById('crossZoneToggle').checked;
+
+            await fetch('/api/order-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    table_id: table.id, status: "ready", size: table.size, 
+                    force_cross_zone: isCrossZoneEnabled, system_state: tables 
+                })
+            });
+            renderGrid(); selectTable(selectedTableId); 
+        }
+
+        function resetTable() {
+            if (!selectedTableId) return;
+            const table = tables.find(t => t.id === selectedTableId);
+            table.status = 'waiting_order'; table.size = 1; 
+            table.eta_seconds = null; 
+            renderGrid(); selectTable(selectedTableId); 
+        }
+
+        function changeFleet(change) {
+            currentFleetTotal += change;
+            if (currentFleetTotal < 1) currentFleetTotal = 1;
+            socket.emit('set_fleet_size', currentFleetTotal);
+        }
+
+        function updateParamFromSlider(type, val) {
+            val = parseInt(val, 10);
+            if (type === 'lookahead') { currentLookahead = val; document.getElementById('p-look').innerText = val + 's'; } 
+            else if (type === 'alertA') { currentAlertA = val; document.getElementById('p-alert-a').innerText = val + 's'; } 
+            else if (type === 'alertB') { currentAlertB = val; document.getElementById('p-alert-b').innerText = val + 's'; }
+            socket.emit('update_kds_params', { lookaheadWindow: currentLookahead, alertThreshold: { 'A': currentAlertA, 'B': currentAlertB } });
+        }
+
+        function sendCustomCall() {
+            const sn = document.getElementById('testSn').value.trim();
+            const mapName = document.getElementById('testMap').value.trim();
+            const pointName = document.getElementById('testPoint').value.trim();
+            
+            if (!sn || !mapName || !pointName) { alert("Please fill out the SN, Map Name, and Point Name."); return; }
+            
+            const banner = document.getElementById('expeditorAlert');
+            banner.innerHTML = `⏳ Transmitting to Robot ${sn}...`;
+            banner.style.color = 'white';
+            banner.style.display = 'block';
+
+            socket.emit('trigger_custom_call', { sn, mapName, pointName });
+        }
+
+        socket.on('kds_alert', (msg) => {
+            const banner = document.getElementById('expeditorAlert');
+            if (msg === "") { banner.style.display = 'none'; } 
+            else { banner.innerHTML = `⚠️ KITCHEN MANAGER ACTION REQUIRED:<br> ${msg}`; banner.style.display = 'block'; }
+        });
+
+        socket.on('fleet_update', (data) => {
+            currentFleetTotal = data.total;
+            document.getElementById('fleetStatus').innerText = `Idle: ${data.available} / Total: ${data.total}`;
+            const nameList = document.getElementById('idleRobotNames');
+            if (data.idleRobots && data.idleRobots.length > 0) {
+                nameList.innerText = `Available: ${data.idleRobots.join(', ')}`;
+                nameList.style.color = 'var(--primary)';
+            } else {
+                nameList.innerText = `Available: None`;
+                nameList.style.color = '#ef4444'; 
+            }
+        });
+
+        // NEW: Real-time UI updates for robot travel states (Delivering vs Returning)
+        socket.on('robot_details_update', (details) => {
+            const list = document.getElementById('activeRobotsList');
+            list.innerHTML = '';
+            for (let robotName in details) {
+                const info = details[robotName];
+                let bgColor = info.state === 'Delivering' ? '#e0e7ff' : '#dcfce7'; // Blue for delivery, Green for return
+                let textColor = info.state === 'Delivering' ? '#4338ca' : '#166534';
+                let icon = info.state === 'Delivering' ? '🚶' : '↩️';
+                
+                list.innerHTML += `
+                    <div style="background: ${bgColor}; padding: 8px; border-radius: 6px; font-size: 0.8rem; color: ${textColor}; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: bold;">🤖 ${robotName}</span>
+                        <div style="text-align: right;">
+                            <div>${icon} ${info.state} to ${info.target}</div>
+                            <div style="font-size: 0.75rem; opacity: 0.8;">ETA: ${info.timeLeft}s</div>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+
+        socket.on('params_update', (params) => {
+            currentLookahead = params.lookaheadWindow; currentAlertA = params.alertThreshold['A']; currentAlertB = params.alertThreshold['B'];
+            document.getElementById('p-look').innerText = currentLookahead + 's'; document.getElementById('p-alert-a').innerText = currentAlertA + 's'; document.getElementById('p-alert-b').innerText = currentAlertB + 's';
+            document.getElementById('slider-look').value = currentLookahead; document.getElementById('slider-alert-a').value = currentAlertA; document.getElementById('slider-alert-b').value = currentAlertB;
+        });
+
+        socket.on('tables_dispatched', (dispatchedTableIds) => {
+            dispatchedTableIds.forEach(id => { const table = tables.find(t => t.id === id); if (table) table.status = 'picked_up'; });
+            renderGrid(); if (selectedTableId) selectTable(selectedTableId);
+        });
+
+        socket.on('tables_reset', (tableIds) => {
+            tableIds.forEach(id => {
+                const table = tables.find(t => t.id === parseInt(id, 10));
+                if (table) {
+                    table.status = 'waiting_order';
+                    table.size = 1;
+                    table.eta_seconds = null;
+                }
+            });
+            renderGrid();
+            if (selectedTableId) selectTable(selectedTableId);
+        });
+
+        // NEW: Receive incoming paid orders from the Customer App
+        socket.on('kds_new_order', (orderData) => {
+            const tableId = parseInt(orderData.table_id);
+            const table = tables.find(t => t.id === tableId);
+            
+            if (table) {
+                table.status = 'preparing';
+                table.size = orderData.size;
+                table.eta_seconds = 300; // Put 5 mins on the clock for the kitchen
+                
+                renderGrid();
+                
+                // Flash an alert to the Kitchen Manager
+                const banner = document.getElementById('expeditorAlert');
+                const loadText = orderData.estimated_trays
+                    ? `${orderData.estimated_trays} estimated trays / robot load ${orderData.size}`
+                    : `${orderData.size} tray load`;
+                banner.innerHTML = `🔔 NEW QR ORDER: Table ${tableId} has paid and sent an order to the kitchen!<br>Load: ${loadText}`;
+                banner.style.color = '#facc15';
+                banner.style.display = 'block';
+                setTimeout(() => banner.style.display = 'none', 8000);
+            }
+        });
+
+        renderGrid();
+    </script>
+</body>
+</html>
+

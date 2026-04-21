@@ -1,0 +1,184 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimabot Waiter</title>
+    <script src="config.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root { --bg: #f1f5f9; --surface: #ffffff; --primary: #3b82f6; --urgent: #ef4444; --success: #10b981; --text: #0f172a; --text-light: #64748b; }
+        body { font-family: system-ui, sans-serif; background-color: #333; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .mobile-frame { background-color: var(--bg); width: 100%; max-width: 400px; height: 100vh; max-height: 850px; position: relative; display: flex; flex-direction: column; overflow: hidden; border: 8px solid #000; border-radius: 30px;}
+        
+        .header { background: var(--surface); padding: 30px 20px 15px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 10; display: flex; justify-content: space-between; align-items: center;}
+        
+        .clear-btn { background: #f1f5f9; border: none; padding: 8px 12px; border-radius: 8px; font-weight: bold; color: #64748b; font-size: 0.75rem; cursor: pointer; transition: background 0.2s;}
+        .clear-btn:active { background: #e2e8f0; }
+
+        .task-list { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        
+        .task-card { background: var(--surface); border-radius: 16px; padding: 20px; border-left: 6px solid var(--primary); flex-shrink: 0; animation: slideIn 0.3s; display: flex; flex-direction: column;}
+        .task-card.urgent { border-left-color: var(--urgent); } 
+        .task-card.arrived { border-left-color: var(--success); background-color: #ecfdf5; }
+        
+        .timer-display { font-size: 2.5rem; font-weight: 800; text-align: center; margin: 15px 0; color: var(--primary); font-variant-numeric: tabular-nums;}
+        .urgent .timer-display { color: var(--urgent); animation: pulse 1s infinite; }
+        .arrived .timer-display { color: var(--success); font-size: 2rem; }
+        
+        .feedback-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 5px;}
+        .feedback-btn { padding: 10px 0; border: none; border-radius: 10px; font-weight: bold; font-size: 0.75rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.1s;}
+        .feedback-btn:active { transform: scale(0.95); }
+        .feedback-btn span { font-size: 1.4rem; } 
+        
+        .fb-perfect { background: #10b981; color: white; }
+        .fb-early { background: #3b82f6; color: white; }
+        .fb-late { background: #f59e0b; color: white; }
+        .fb-cold { background: #ef4444; color: white; }
+
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+    <div class="mobile-frame">
+        <div class="header">
+            <div>
+                <h1 style="margin:0; font-size: 1.2rem;">Waiter Rendezvous</h1>
+                <div style="font-size: 0.85rem; color: var(--text-light);" id="connectionStatus">Connecting...</div>
+            </div>
+            <button class="clear-btn" onclick="clearAllTasks()">Clear All</button>
+        </div>
+        
+        <div class="task-list" id="taskList">
+            <div id="emptyState" style="text-align:center; color:#64748b; margin-top:50px;">
+                On Floor Duty.<br>Awaiting Intercept Alerts.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const serverUrl = (window.OPTIMABOT_BACKEND_URL && window.OPTIMABOT_BACKEND_URL !== '__BACKEND_URL__')
+            ? window.OPTIMABOT_BACKEND_URL
+            : (window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin);
+
+        const socket = io(serverUrl, { transports: ['websocket', 'polling'] });
+        let activeTasks = [];
+
+        socket.on('connect', () => { 
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.innerText = '🟢 Connected to Engine'; 
+            statusEl.style.color = '#10b981';
+        });
+
+        socket.on('connect_error', (error) => {
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.innerText = '🔴 Error: ' + error.message; 
+            statusEl.style.color = '#ef4444'; 
+            console.error("Socket Error:", error);
+        });
+        
+        socket.on('robot_dispatched', (payload) => {
+            activeTasks.push({ id: payload.task_id, table_id: payload.table_id, robot_id: payload.robot_id, timeLeft: payload.eta_seconds });
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]); 
+            renderTasks();
+        });
+
+        setInterval(() => {
+            let needsRender = false;
+            activeTasks.forEach(t => { 
+                if (t.timeLeft > 0) { 
+                    t.timeLeft--; 
+                    needsRender = true; 
+                } 
+            });
+            if (needsRender) renderTasks();
+        }, 1000);
+
+        function clearAllTasks() {
+            activeTasks = [];
+            renderTasks();
+        }
+
+        function renderTasks() {
+            const listEl = document.getElementById('taskList');
+            const emptyState = document.getElementById('emptyState');
+
+            if (activeTasks.length === 0) {
+                emptyState.style.display = 'block';
+                document.querySelectorAll('.task-card').forEach(card => card.remove());
+                return;
+            }
+            emptyState.style.display = 'none';
+
+            // Sort all active tasks by urgency
+            activeTasks.sort((a, b) => a.timeLeft - b.timeLeft);
+
+            const activeIds = activeTasks.map(t => 'task-' + t.id);
+            document.querySelectorAll('.task-card').forEach(card => {
+                if (!activeIds.includes(card.id)) {
+                    card.remove();
+                }
+            });
+
+            // Render ALL tasks sequentially (no slice limit)
+            activeTasks.forEach((task, index) => {
+                const isUrgent = task.timeLeft > 0 && task.timeLeft <= 15;
+                const isArrived = task.timeLeft <= 0;
+                
+                let cardClass = 'task-card' + (isUrgent ? ' urgent' : '') + (isArrived ? ' arrived' : '');
+                let timeString = isArrived ? "ARRIVED!" : task.timeLeft + "s";
+                
+                let card = document.getElementById('task-' + task.id);
+
+                if (!card) {
+                    card = document.createElement('div');
+                    card.id = 'task-' + task.id;
+                    card.className = cardClass;
+                    card.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h2 style="margin:0;">Table ${task.table_id}</h2>
+                            <span style="background:#e2e8f0; padding:4px 8px; border-radius:12px; font-size:0.85rem; font-weight:bold; color:#475569;">🤖 ${task.robot_id}</span>
+                        </div>
+                        <div class="timer-display">${timeString}</div>
+                        <div class="feedback-container"></div>
+                    `;
+                    listEl.appendChild(card);
+                } else {
+                    card.className = cardClass;
+                    card.querySelector('.timer-display').innerText = timeString;
+                }
+
+                const feedbackBox = card.querySelector('.feedback-container');
+                if (isArrived && feedbackBox.innerHTML === '') {
+                    feedbackBox.innerHTML = `
+                        <div style="text-align:center; font-size:0.75rem; color:#64748b; font-weight:bold; margin-bottom:5px;">RATE RENDEZVOUS</div>
+                        <div class="feedback-grid">
+                            <button class="feedback-btn fb-perfect" onclick="sendFeedback('${task.id}', ${task.table_id}, 'perfect')">
+                                <span>👍</span> OK
+                            </button>
+                            <button class="feedback-btn fb-early" onclick="sendFeedback('${task.id}', ${task.table_id}, 'early')">
+                                <span>👎</span> Early
+                            </button>
+                            <button class="feedback-btn fb-late" onclick="sendFeedback('${task.id}', ${task.table_id}, 'late')">
+                                <span>👎</span> Late
+                            </button>
+                            <button class="feedback-btn fb-cold" onclick="sendFeedback('${task.id}', ${task.table_id}, 'cold')">
+                                <span>🧊</span> Cold
+                            </button>
+                        </div>
+                    `;
+                }
+
+                card.style.order = index;
+            });
+        }
+
+        function sendFeedback(taskId, tableId, feedbackType) {
+            socket.emit('waiter_feedback', { table_id: tableId, feedback: feedbackType });
+            activeTasks = activeTasks.filter(t => t.id !== taskId); 
+            renderTasks();
+        }
+    </script>
+</body>
+</html>

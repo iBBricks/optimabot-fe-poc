@@ -1,0 +1,54 @@
+{
+  "routes": [
+    {
+      "route": "/",
+      "redirect": "/kds",
+      "statusCode": 302
+    },
+    {
+      "route": "/kds",
+      "rewrite": "/kds/index.html"
+    },
+    {
+      "route": "/waiter",
+      "rewrite": "/waiter/index.html"
+    },
+    {
+      "route": "/customer",
+      "rewrite": "/customer/index.html"
+    },
+    {
+      "route": "/kds/config.js",
+      "rewrite": "/kds/config.js"
+    },
+    {
+      "route": "/waiter/config.js",
+      "rewrite": "/waiter/config.js"
+    },
+    {
+      "route": "/customer/config.js",
+      "rewrite": "/customer/config.js"
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/kds/index.html",
+    "exclude": [
+      "/kds/config.js",
+      "/waiter/config.js",
+      "/customer/config.js",
+      "/assets/*",
+      "/*.{css,scss,js,png,jpg,svg,ico,gif,webp,woff,woff2}"
+    ]
+  },
+  "responseOverrides": {
+    "404": { "rewrite": "/kds/index.html", "statusCode": 200 }
+  },
+  "globalHeaders": {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "mimeTypes": {
+    ".json": "application/json"
+  }
+}

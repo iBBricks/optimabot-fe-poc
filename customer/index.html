@@ -1,0 +1,974 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Optimabot Order &amp; Pay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="config.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg: #faf7f2;
+            --surface: #ffffff;
+            --ink: #1a1208;
+            --ink-soft: #7a6e5f;
+            --accent: #c8420a;
+            --accent-light: #fff0eb;
+            --gold: #d4a017;
+            --gold-light: #fdf8ec;
+            --border: #e8e0d4;
+            --success: #1a6b3c;
+            --success-light: #edf7f2;
+            --radius: 16px;
+            --shadow: 0 4px 24px rgba(26,18,8,0.08);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: #2c2416;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 12px 0 40px;
+        }
+
+        .phone-shell {
+            width: 100%;
+            max-width: 420px;
+            background: var(--bg);
+            min-height: calc(100vh - 24px);
+            border-radius: 28px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ── */
+        .app-header {
+            background: var(--ink);
+            color: #faf7f2;
+            padding: 18px 20px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header-brand { font-family: 'DM Serif Display', serif; font-size: 1.3rem; letter-spacing: -0.02em; }
+        .header-table { font-size: 0.8rem; color: var(--gold); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+        .cart-pill {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 8px 16px;
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: transform 0.15s, background 0.15s;
+        }
+        .cart-pill:active { transform: scale(0.95); }
+        .cart-pill.bump { animation: bump 0.3s ease; }
+        @keyframes bump { 0%,100% { transform: scale(1); } 40% { transform: scale(1.15); } }
+        .cart-badge { background: white; color: var(--accent); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; }
+
+        /* ── Screens ── */
+        .screen { display: none; flex-direction: column; flex: 1; }
+        .screen.active { display: flex; }
+
+        /* ── Menu Screen ── */
+        .category-tabs {
+            display: flex;
+            gap: 6px;
+            padding: 14px 16px 10px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+        }
+        .category-tabs::-webkit-scrollbar { display: none; }
+        .cat-tab {
+            padding: 7px 16px;
+            border-radius: 50px;
+            border: 1.5px solid var(--border);
+            background: transparent;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--ink-soft);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .cat-tab.active { background: var(--ink); color: white; border-color: var(--ink); }
+
+        .menu-list { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+
+        .menu-item {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 14px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: transform 0.15s;
+        }
+        .menu-item:active { transform: scale(0.99); }
+
+        .item-emoji { font-size: 2.2rem; width: 52px; text-align: center; flex-shrink: 0; }
+        .item-info { flex: 1; }
+        .item-name { font-weight: 600; font-size: 0.95rem; color: var(--ink); margin-bottom: 3px; }
+        .item-desc { font-size: 0.78rem; color: var(--ink-soft); line-height: 1.4; margin-bottom: 6px; }
+        .item-price { font-weight: 700; color: var(--accent); font-size: 0.95rem; }
+        .item-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; }
+        .tag {
+            font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 600;
+            background: var(--gold-light); color: var(--gold);
+        }
+        .tag.veg { background: var(--success-light); color: var(--success); }
+        .tag.spicy { background: #fff0eb; color: #c8420a; }
+
+        .qty-ctrl {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        .qty-btn {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            border: 1.5px solid var(--border);
+            background: var(--bg);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700;
+            color: var(--ink);
+            transition: all 0.15s;
+        }
+        .qty-btn.add { border-color: var(--accent); background: var(--accent); color: white; }
+        .qty-btn:active { transform: scale(0.9); }
+        .qty-num { font-weight: 700; font-size: 1rem; min-width: 16px; text-align: center; color: var(--ink); }
+
+        /* ── Cart Screen ── */
+        .cart-screen { padding: 16px; gap: 12px; }
+        .section-title {
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.3rem;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+        .section-sub { font-size: 0.82rem; color: var(--ink-soft); margin-bottom: 12px; }
+
+        .cart-item {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid var(--border);
+        }
+        .cart-item-emoji { font-size: 1.5rem; width: 36px; text-align: center; }
+        .cart-item-info { flex: 1; }
+        .cart-item-name { font-weight: 600; font-size: 0.9rem; }
+        .cart-item-subtotal { font-size: 0.82rem; color: var(--ink-soft); margin-top: 2px; }
+        .cart-item-remove {
+            background: none; border: none; color: #c4b9a8; font-size: 1.1rem; cursor: pointer; padding: 4px;
+            transition: color 0.2s;
+        }
+        .cart-item-remove:hover { color: var(--accent); }
+
+        .notes-input {
+            width: 100%;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.85rem;
+            background: var(--surface);
+            color: var(--ink);
+            resize: none;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .notes-input:focus { border-color: var(--accent); }
+
+        .order-summary {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 14px 16px;
+        }
+        .summary-row {
+            display: flex; justify-content: space-between;
+            font-size: 0.85rem; color: var(--ink-soft);
+            padding: 4px 0;
+        }
+        .summary-row.total {
+            font-size: 1rem; font-weight: 700; color: var(--ink);
+            border-top: 1px dashed var(--border);
+            margin-top: 8px; padding-top: 10px;
+        }
+
+        .btn-primary {
+            width: 100%; padding: 16px;
+            background: var(--accent);
+            color: white;
+            border: none; border-radius: var(--radius);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1rem; font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+            letter-spacing: 0.01em;
+        }
+        .btn-primary:active { transform: scale(0.98); }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-secondary {
+            width: 100%; padding: 13px;
+            background: transparent;
+            color: var(--ink);
+            border: 1.5px solid var(--border); border-radius: var(--radius);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.9rem; font-weight: 600;
+            cursor: pointer;
+        }
+
+        /* ── Pay Screen ── */
+        .pay-screen { padding: 20px; gap: 14px; }
+        .pay-header { text-align: center; margin-bottom: 8px; }
+        .pay-amount {
+            font-family: 'DM Serif Display', serif;
+            font-size: 3.2rem; color: var(--ink);
+            text-align: center; margin: 8px 0;
+        }
+
+        .pay-methods { display: flex; flex-direction: column; gap: 10px; }
+        .pay-option {
+            background: var(--surface);
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            display: flex; align-items: center; gap: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .pay-option.selected { border-color: var(--accent); background: var(--accent-light); }
+        .pay-option-icon { font-size: 1.8rem; width: 40px; text-align: center; }
+        .pay-option-label { font-weight: 600; font-size: 0.95rem; color: var(--ink); }
+        .pay-option-sub { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+        .pay-check {
+            margin-left: auto; width: 22px; height: 22px; border-radius: 50%;
+            border: 2px solid var(--border); display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .pay-option.selected .pay-check { background: var(--accent); border-color: var(--accent); }
+        .pay-check::after { content: '✓'; color: white; font-size: 0.75rem; font-weight: 700; display: none; }
+        .pay-option.selected .pay-check::after { display: block; }
+
+        /* Card form */
+        .card-form { display: none; background: var(--surface); border-radius: var(--radius); padding: 16px; border: 1px solid var(--border); gap: 10px; flex-direction: column; }
+        .card-form.visible { display: flex; }
+        .field-label { font-size: 0.75rem; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .field-input {
+            width: 100%; border: 1.5px solid var(--border); border-radius: 10px;
+            padding: 10px 12px; font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
+            color: var(--ink); background: var(--bg); outline: none;
+            transition: border-color 0.2s;
+        }
+        .field-input:focus { border-color: var(--accent); }
+        .card-row { display: flex; gap: 10px; }
+        .card-row .field-wrap { flex: 1; }
+
+        /* ── Confirmation Screen ── */
+        .confirm-screen {
+            align-items: center; justify-content: center;
+            text-align: center; padding: 30px 24px;
+            gap: 16px;
+        }
+        .confirm-icon {
+            width: 90px; height: 90px;
+            background: var(--success-light);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 2.8rem;
+            animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .confirm-title { font-family: 'DM Serif Display', serif; font-size: 2rem; color: var(--ink); }
+        .confirm-sub { color: var(--ink-soft); font-size: 0.9rem; line-height: 1.6; }
+        .order-ref {
+            background: var(--surface); border: 1px dashed var(--border);
+            border-radius: var(--radius); padding: 14px 20px; width: 100%;
+        }
+        .order-ref-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); margin-bottom: 4px; }
+        .order-ref-num { font-family: 'DM Serif Display', serif; font-size: 2rem; color: var(--accent); letter-spacing: 0.05em; }
+        .progress-dots { display: flex; gap: 8px; margin-top: 8px; }
+        .dot {
+            width: 8px; height: 8px; border-radius: 50%; background: var(--border);
+            transition: background 0.4s;
+        }
+        .dot.active { background: var(--success); }
+
+        .status-card {
+            background: var(--surface); border-radius: var(--radius);
+            border: 1px solid var(--border); padding: 16px 18px; width: 100%;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .status-icon { font-size: 1.5rem; }
+        .status-label { font-size: 0.8rem; color: var(--ink-soft); }
+        .status-val { font-weight: 700; color: var(--ink); font-size: 0.95rem; }
+
+        /* ── Helpers ── */
+        .empty-cart {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 10px; color: var(--ink-soft);
+        }
+        .empty-cart-icon { font-size: 3rem; opacity: 0.4; }
+        .empty-cart-text { font-size: 0.9rem; }
+
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px);
+            background: var(--ink); color: white;
+            padding: 10px 20px; border-radius: 50px;
+            font-size: 0.85rem; font-weight: 500;
+            opacity: 0; transition: all 0.3s; z-index: 999; white-space: nowrap;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        .divider { height: 1px; background: var(--border); width: 100%; }
+
+        .tip-selector { display: flex; gap: 6px; }
+        .tip-btn {
+            flex: 1; padding: 9px 4px;
+            border: 1.5px solid var(--border); border-radius: 10px;
+            background: transparent; font-family: 'DM Sans', sans-serif;
+            font-size: 0.82rem; font-weight: 600; color: var(--ink-soft);
+            cursor: pointer; transition: all 0.2s; text-align: center;
+        }
+        .tip-btn.active { border-color: var(--gold); background: var(--gold-light); color: #8a6200; }
+
+        .prev-orders-banner {
+            background: var(--gold-light);
+            border: 1px solid #e8d5a0;
+            border-radius: 12px;
+            padding: 12px 14px;
+            margin: 12px 14px 0;
+            font-size: 0.82rem;
+            color: #6b5200;
+            display: none;
+        }
+        .prev-orders-banner strong { color: #8a6200; }
+
+        .load-summary {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+        }
+        .load-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+        .load-title { font-weight: 700; color: var(--ink); font-size: 0.9rem; }
+        .load-value { font-weight: 800; color: var(--accent); font-size: 0.9rem; white-space: nowrap; }
+        .load-bar { height: 8px; background: var(--accent-light); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+        .load-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease; }
+        .load-detail { color: var(--ink-soft); font-size: 0.78rem; line-height: 1.4; }
+        .load-detail.warn { color: var(--accent); font-weight: 700; }
+        .pickup-action { display: none; width: 100%; margin-top: 4px; }
+        .pickup-action.visible { display: block; }
+    </style>
+</head>
+<body>
+<div class="phone-shell">
+
+    <!-- Header -->
+    <header class="app-header">
+        <div>
+            <div class="header-brand">Optimabot</div>
+            <div class="header-table" id="tableLabel">Table —</div>
+        </div>
+        <button class="cart-pill" id="cartBtn" onclick="goToScreen('cart')">
+            🛒 <span id="cartTotal">€0.00</span>
+            <span class="cart-badge" id="cartCount">0</span>
+        </button>
+    </header>
+
+    <!-- ── MENU SCREEN ── -->
+    <div class="screen active" id="screen-menu">
+        <div class="category-tabs" id="categoryTabs"></div>
+        <div class="prev-orders-banner" id="prevOrdersBanner"></div>
+        <div class="menu-list" id="menuList"></div>
+    </div>
+
+    <!-- ── CART SCREEN ── -->
+    <div class="screen" id="screen-cart">
+        <div class="cart-screen" style="display:flex; flex-direction:column; padding:16px; gap:12px; overflow-y:auto;">
+            <div>
+                <div class="section-title">Your Order</div>
+                <div class="section-sub" id="cartSubtitle">Review before sending to kitchen</div>
+            </div>
+            <div id="cartItems" style="display:flex; flex-direction:column; gap:8px;"></div>
+            <div id="cartEmpty" class="empty-cart" style="display:none; min-height:150px;">
+                <div class="empty-cart-icon">🍽️</div>
+                <div class="empty-cart-text">Your order is empty</div>
+            </div>
+            <div class="divider"></div>
+            <div>
+                <div class="field-label" style="margin-bottom:6px;">Any requests or allergies?</div>
+                <textarea class="notes-input" id="orderNotes" rows="2" placeholder="e.g. no onions, extra sauce…"></textarea>
+            </div>
+            <div class="divider"></div>
+            <!-- Tip -->
+            <div>
+                <div class="field-label" style="margin-bottom:8px;">Add a tip</div>
+                <div class="tip-selector">
+                    <button class="tip-btn" onclick="setTip(0)">None</button>
+                    <button class="tip-btn" onclick="setTip(10)">10%</button>
+                    <button class="tip-btn active" onclick="setTip(15)">15%</button>
+                    <button class="tip-btn" onclick="setTip(20)">20%</button>
+                </div>
+            </div>
+            <div class="load-summary" id="cartLoadSummary"></div>
+            <div class="order-summary" id="orderSummary"></div>
+            <button class="btn-primary" id="btnSendOrder" onclick="sendOrder()">Continue to Payment</button>
+            <button class="btn-secondary" onclick="goToScreen('menu')">← Continue Ordering</button>
+        </div>
+    </div>
+
+    <!-- ── PAY SCREEN ── -->
+    <div class="screen" id="screen-pay">
+        <div class="pay-screen">
+            <div class="pay-header">
+                <div class="section-title" style="text-align:center;">Time to Pay</div>
+                <div style="font-size:0.82rem; color:var(--ink-soft); text-align:center;" id="paySubtitle">Choose your payment method</div>
+            </div>
+            <div class="pay-amount" id="payAmount">€0.00</div>
+
+            <div class="pay-methods">
+                <div class="pay-option selected" id="pay-apple" onclick="selectPayMethod('apple')">
+                    <div class="pay-option-icon">Apple</div>
+                    <div>
+                        <div class="pay-option-label">Apple Pay</div>
+                        <div class="pay-option-sub">Simulated wallet payment</div>
+                    </div>
+                    <div class="pay-check"></div>
+                </div>
+                <div class="pay-option" id="pay-google" onclick="selectPayMethod('google')">
+                    <div class="pay-option-icon">GPay</div>
+                    <div>
+                        <div class="pay-option-label">Google Pay</div>
+                        <div class="pay-option-sub">Simulated wallet payment</div>
+                    </div>
+                    <div class="pay-check"></div>
+                </div>
+            </div>
+
+            <div class="order-summary" id="paySummary"></div>
+
+            <button class="btn-primary" id="btnPay" onclick="processPayment()">Pay and Send Order</button>
+            <button class="btn-secondary" onclick="goToScreen('cart')">← Back to Order</button>
+        </div>
+    </div>
+
+    <!-- ── CONFIRMATION SCREEN ── -->
+    <div class="screen" id="screen-confirm">
+        <div class="confirm-screen">
+            <div class="confirm-icon">✅</div>
+            <div class="confirm-title">Order Placed!</div>
+            <div class="confirm-sub">Your order is being prepared.<br>We'll bring it to you shortly.</div>
+            <div class="order-ref">
+                <div class="order-ref-label">Order Reference</div>
+                <div class="order-ref-num" id="orderRef">#—</div>
+            </div>
+            <div class="status-card">
+                <div class="status-icon" id="statusIcon">👨‍🍳</div>
+                <div>
+                    <div class="status-label">Current status</div>
+                    <div class="status-val" id="statusVal">Kitchen is preparing your order…</div>
+                </div>
+            </div>
+            <div class="load-summary" id="confirmLoadSummary"></div>
+            <div class="progress-dots" id="progressDots">
+                <div class="dot active"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+            <button class="btn-primary pickup-action" id="pickupDoneBtn" onclick="completePickup()">I have taken my dishes</button>
+            <button class="btn-secondary" style="margin-top:8px;" onclick="goToScreen('menu')">Order More Items</button>
+        </div>
+    </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────
+const TABLE_ID = parseInt(new URLSearchParams(window.location.search).get('table') || '1');
+const SERVER_URL = (window.OPTIMABOT_BACKEND_URL && window.OPTIMABOT_BACKEND_URL !== '__BACKEND_URL__')
+    ? window.OPTIMABOT_BACKEND_URL
+    : (window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin);
+const VAT_RATE = 0.10; // 10% IVA
+const ROBOT_TRAY_CAPACITY = 4;
+const TABLE_ZONE = TABLE_ID <= 6 ? 'A' : 'B';
+const SERVICE_MODE = TABLE_ZONE === 'A' ? 'Robot serve' : 'Waiter serve';
+
+// ── MENU DATA ────────────────────────────────────────────
+const MENU = [
+    // Antipasti
+    { id: 1, cat: 'Antipasti', name: 'Burrata e Prosciutto', desc: 'Fresh burrata, 18-month Prosciutto di Parma, grilled focaccia', price: 14, emoji: '🧀', tags: ['Chef\'s Pick'], trayUnits: 1 },
+    { id: 2, cat: 'Antipasti', name: 'Bruschetta al Pomodoro', desc: 'Toasted sourdough, cherry tomatoes, fresh basil, EVOO', price: 8, emoji: '🍅', tags: ['Vegan', '🌶 Mild'], trayUnits: 0.5 },
+    { id: 3, cat: 'Antipasti', name: 'Polpo alla Griglia', desc: 'Grilled octopus, chickpea cream, smoked paprika oil', price: 17, emoji: '🐙', tags: [], trayUnits: 1 },
+    // Primi
+    { id: 4, cat: 'Primi', name: 'Tagliolini al Tartufo', desc: 'Fresh egg tagliolini, black truffle, Parmigiano, butter', price: 22, emoji: '🍝', tags: ['Chef\'s Pick'], trayUnits: 1 },
+    { id: 5, cat: 'Primi', name: 'Risotto ai Funghi', desc: 'Carnaroli rice, porcini, thyme, Grana Padano', price: 18, emoji: '🍚', tags: ['Vegetarian'], trayUnits: 1 },
+    { id: 6, cat: 'Primi', name: 'Spaghetti alle Vongole', desc: 'Spaghetti, clams, white wine, garlic, parsley', price: 19, emoji: '🦪', tags: [], trayUnits: 1 },
+    // Secondi
+    { id: 7, cat: 'Secondi', name: 'Tagliata di Manzo', desc: 'Grilled beef sirloin, rocket, shaved Parmigiano, lemon', price: 28, emoji: '🥩', tags: ['Gluten-Free'], trayUnits: 1.5 },
+    { id: 8, cat: 'Secondi', name: 'Branzino al Forno', desc: 'Roasted sea bass, capers, olives, cherry tomatoes', price: 26, emoji: '🐟', tags: [], trayUnits: 1.5 },
+    { id: 9, cat: 'Secondi', name: 'Melanzane alla Parmigiana', desc: 'Layered eggplant, tomato, mozzarella, basil — baked fresh', price: 16, emoji: '🍆', tags: ['Vegetarian'], trayUnits: 1 },
+    // Contorni
+    { id: 10, cat: 'Contorni', name: 'Patate al Rosmarino', desc: 'Crispy roasted potatoes with rosemary and sea salt', price: 6, emoji: '🥔', tags: ['Vegan'], trayUnits: 0.5 },
+    { id: 11, cat: 'Contorni', name: 'Insalata Mista', desc: 'Mixed greens, cucumber, radish, lemon vinaigrette', price: 7, emoji: '🥗', tags: ['Vegan', 'Gluten-Free'], trayUnits: 0.5 },
+    // Dolci
+    { id: 12, cat: 'Dolci', name: 'Tiramisù della Casa', desc: 'Classic house tiramisù — mascarpone, espresso, savoiardi', price: 9, emoji: '🍰', tags: ['Vegetarian'], trayUnits: 0.5 },
+    { id: 13, cat: 'Dolci', name: 'Panna Cotta ai Frutti', desc: 'Vanilla panna cotta, fresh berry coulis', price: 8, emoji: '🍮', tags: ['Gluten-Free'], trayUnits: 0.5 },
+    // Drinks
+    { id: 14, cat: 'Bevande', name: 'Acqua Naturale', desc: '750ml still water', price: 3, emoji: '💧', tags: [], trayUnits: 0.25 },
+    { id: 15, cat: 'Bevande', name: 'Acqua Frizzante', desc: '750ml sparkling water', price: 3, emoji: '🫧', tags: [], trayUnits: 0.25 },
+    { id: 16, cat: 'Bevande', name: 'Vino della Casa — Rosso', desc: 'House red wine, carafe 500ml', price: 12, emoji: '🍷', tags: [], trayUnits: 0.5 },
+    { id: 17, cat: 'Bevande', name: 'Vino della Casa — Bianco', desc: 'House white wine, carafe 500ml', price: 12, emoji: '🥂', tags: [], trayUnits: 0.5 },
+    { id: 18, cat: 'Bevande', name: 'Espresso', desc: 'Single shot espresso', price: 2.5, emoji: '☕', tags: [], trayUnits: 0.25 },
+];
+
+const CATEGORIES = [...new Set(MENU.map(i => i.cat))];
+
+// ── STATE ────────────────────────────────────────────────
+let cart = {}; // { itemId: quantity }
+let currentCategory = CATEGORIES[0];
+let selectedTip = 15;
+let selectedPayMethod = 'apple';
+let currentOrderId = null;
+let sentOrders = []; // track sent order refs for "order more" flow
+let pendingOrderPayload = null;
+
+// ── SOCKET ───────────────────────────────────────────────
+const socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
+
+socket.on('connect', () => console.log('[Customer App] Connected'));
+
+socket.on('tables_dispatched', (dispatchedTableIds) => {
+    if (dispatchedTableIds.map(id => parseInt(id, 10)).includes(TABLE_ID)) {
+        updateOrderStatus('dispatched');
+        if (navigator.vibrate) navigator.vibrate(200);
+    }
+});
+
+socket.on('robot_dispatched', (payload) => {
+    if (parseInt(payload.table_id, 10) === TABLE_ID && TABLE_ZONE === 'B') {
+        updateOrderStatus('waiter', payload.eta_seconds);
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
+});
+
+socket.on('customer_pickup_alert', (payload) => {
+    if (parseInt(payload.table_id, 10) === TABLE_ID && TABLE_ZONE === 'A') {
+        updateOrderStatus('arrived', null, payload.robot_id);
+        document.getElementById('pickupDoneBtn').classList.add('visible');
+        if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+    }
+});
+
+// ── INIT ─────────────────────────────────────────────────
+document.getElementById('tableLabel').textContent = `Table ${TABLE_ID} · Zone ${TABLE_ZONE} (${SERVICE_MODE})`;
+document.title = `Order — Table ${TABLE_ID}`;
+
+renderCategoryTabs();
+renderMenu();
+
+// ── RENDERING ────────────────────────────────────────────
+function renderCategoryTabs() {
+    const el = document.getElementById('categoryTabs');
+    el.innerHTML = CATEGORIES.map(cat => `
+        <button class="cat-tab ${cat === currentCategory ? 'active' : ''}" onclick="setCategory('${cat}')">${cat}</button>
+    `).join('');
+}
+
+function setCategory(cat) {
+    currentCategory = cat;
+    renderCategoryTabs();
+    renderMenu();
+}
+
+function renderMenu() {
+    const items = MENU.filter(i => i.cat === currentCategory);
+    const el = document.getElementById('menuList');
+    el.innerHTML = items.map(item => {
+        const qty = cart[item.id] || 0;
+        const tags = item.tags.map(t => {
+            const cls = t === 'Vegan' || t === 'Vegetarian' || t === 'Gluten-Free' ? 'tag veg' : t.includes('🌶') ? 'tag spicy' : 'tag';
+            return `<span class="${cls}">${t}</span>`;
+        }).join('');
+        return `
+        <div class="menu-item" id="mi-${item.id}">
+            <div class="item-emoji">${item.emoji}</div>
+            <div class="item-info">
+                ${tags ? `<div class="item-tags">${tags}</div>` : ''}
+                <div class="item-name">${item.name}</div>
+                <div class="item-desc">${item.desc}</div>
+                <div class="item-price">€${item.price.toFixed(2)} · ${formatTrayUnits(item.trayUnits)}</div>
+            </div>
+            <div class="qty-ctrl">
+                ${qty > 0 ? `
+                    <button class="qty-btn" onclick="updateQty(${item.id}, -1)">−</button>
+                    <span class="qty-num">${qty}</span>
+                ` : ''}
+                <button class="qty-btn add" onclick="updateQty(${item.id}, 1)">+</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function updateQty(itemId, delta) {
+    cart[itemId] = (cart[itemId] || 0) + delta;
+    if (cart[itemId] <= 0) delete cart[itemId];
+    renderMenu();
+    updateCartPill();
+}
+
+function updateCartPill() {
+    const count = Object.values(cart).reduce((a, b) => a + b, 0);
+    const subtotal = getSubtotal();
+    document.getElementById('cartCount').textContent = count;
+    document.getElementById('cartTotal').textContent = `€${subtotal.toFixed(2)}`;
+    // Bump animation
+    const pill = document.getElementById('cartBtn');
+    pill.classList.remove('bump');
+    void pill.offsetWidth;
+    pill.classList.add('bump');
+}
+
+function getSubtotal() {
+    return Object.entries(cart).reduce((sum, [id, qty]) => {
+        const item = MENU.find(i => i.id === parseInt(id));
+        return sum + (item ? item.price * qty : 0);
+    }, 0);
+}
+
+function getTipAmount(sub) { return sub * selectedTip / 100; }
+function getVat(sub) { return sub * VAT_RATE; }
+function getTotal() {
+    const sub = getSubtotal();
+    return sub + getVat(sub) + getTipAmount(sub);
+}
+
+function getOrderLoad() {
+    const rawUnits = Object.entries(cart).reduce((sum, [id, qty]) => {
+        const item = MENU.find(i => i.id === parseInt(id));
+        return sum + (item ? item.trayUnits * qty : 0);
+    }, 0);
+    const estimatedTrays = rawUnits > 0 ? Math.ceil(rawUnits) : 0;
+    const robotSize = Math.min(ROBOT_TRAY_CAPACITY, estimatedTrays);
+    return {
+        rawUnits,
+        estimatedTrays,
+        robotSize,
+        needsSplit: estimatedTrays > ROBOT_TRAY_CAPACITY
+    };
+}
+
+function formatTrayUnits(units) {
+    return `${units} tray${units === 1 ? '' : 's'}`;
+}
+
+function renderLoadSummary(containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    const itemCount = Object.values(cart).reduce((a, b) => a + b, 0);
+    const load = getOrderLoad();
+    const pct = Math.min(100, (load.robotSize / ROBOT_TRAY_CAPACITY) * 100);
+    const detail = itemCount === 0
+        ? 'Add dishes to estimate robot tray load.'
+        : `${itemCount} item${itemCount === 1 ? '' : 's'} · ${load.rawUnits.toFixed(2)} tray units · ${SERVICE_MODE}`;
+    const warning = load.needsSplit
+        ? `<div class="load-detail warn">Large order: estimated ${load.estimatedTrays} trays. KDS receives XL load now; split dispatch may be needed.</div>`
+        : '';
+
+    el.innerHTML = `
+        <div class="load-head">
+            <div class="load-title">Robot load estimate</div>
+            <div class="load-value">${load.robotSize}/${ROBOT_TRAY_CAPACITY} trays</div>
+        </div>
+        <div class="load-bar"><div class="load-fill" style="width:${pct}%"></div></div>
+        <div class="load-detail">${detail}</div>
+        ${warning}
+    `;
+}
+
+function renderOrderSummary(containerId, payload = null) {
+    const sub = payload ? payload.subtotal : getSubtotal();
+    const vat = getVat(sub);
+    const tip = payload ? payload.total - payload.subtotal - vat : getTipAmount(sub);
+    const total = payload ? payload.total : sub + vat + tip;
+    document.getElementById(containerId).innerHTML = `
+        <div class="summary-row"><span>Subtotal</span><span>€${sub.toFixed(2)}</span></div>
+        <div class="summary-row"><span>IVA (10%)</span><span>€${vat.toFixed(2)}</span></div>
+        <div class="summary-row"><span>Tip (${selectedTip}%)</span><span>€${tip.toFixed(2)}</span></div>
+        <div class="summary-row total"><span>Total</span><span>€${total.toFixed(2)}</span></div>
+    `;
+}
+
+// ── CART SCREEN ───────────────────────────────────────────
+function renderCart() {
+    const items = Object.entries(cart);
+    const el = document.getElementById('cartItems');
+    const empty = document.getElementById('cartEmpty');
+    const sendBtn = document.getElementById('btnSendOrder');
+
+    if (items.length === 0) {
+        el.innerHTML = '';
+        empty.style.display = 'flex';
+        sendBtn.disabled = true;
+        renderLoadSummary('cartLoadSummary');
+        renderOrderSummary('orderSummary');
+        return;
+    }
+    empty.style.display = 'none';
+    sendBtn.disabled = false;
+
+    el.innerHTML = items.map(([id, qty]) => {
+        const item = MENU.find(i => i.id === parseInt(id));
+        if (!item) return '';
+        return `
+        <div class="cart-item">
+            <div class="cart-item-emoji">${item.emoji}</div>
+            <div class="cart-item-info">
+                <div class="cart-item-name">${item.name}</div>
+                <div class="cart-item-subtotal">×${qty} — €${(item.price * qty).toFixed(2)} — ${formatTrayUnits(item.trayUnits * qty)}</div>
+            </div>
+            <div class="qty-ctrl" style="gap:8px;">
+                <button class="qty-btn" onclick="updateQty(${item.id},-1); renderCart(); renderOrderSummary('orderSummary');" style="width:26px;height:26px;font-size:1rem;">−</button>
+                <span class="qty-num">${qty}</span>
+                <button class="qty-btn add" onclick="updateQty(${item.id},1); renderCart(); renderOrderSummary('orderSummary');" style="width:26px;height:26px;font-size:1rem;">+</button>
+            </div>
+            <button class="cart-item-remove" onclick="removeItem(${item.id})">✕</button>
+        </div>`;
+    }).join('');
+    renderLoadSummary('cartLoadSummary');
+    renderOrderSummary('orderSummary');
+}
+
+function removeItem(itemId) {
+    delete cart[itemId];
+    updateCartPill();
+    renderCart();
+}
+
+function setTip(pct) {
+    selectedTip = pct;
+    document.querySelectorAll('.tip-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', [0, 10, 15, 20][i] === pct);
+    });
+    renderOrderSummary('orderSummary');
+}
+
+// ── SEND ORDER TO KITCHEN ─────────────────────────────────
+function buildCurrentOrderPayload() {
+    if (Object.keys(cart).length === 0) {
+        showToast('Add at least one dish first');
+        return null;
+    }
+
+    const items = Object.entries(cart).map(([id, qty]) => {
+        const item = MENU.find(i => i.id === parseInt(id));
+        return { id: parseInt(id), name: item.name, qty, price: item.price, trayUnits: item.trayUnits };
+    });
+    const notes = document.getElementById('orderNotes').value.trim();
+    const orderId = 'ORD-' + Math.random().toString(36).substr(2,5).toUpperCase();
+    const load = getOrderLoad();
+
+    return {
+        table_id: TABLE_ID,
+        zone: TABLE_ZONE,
+        service_mode: SERVICE_MODE,
+        order_id: orderId,
+        items,
+        notes,
+        size: load.robotSize,
+        tray_units: Number(load.rawUnits.toFixed(2)),
+        estimated_trays: load.estimatedTrays,
+        needs_split: load.needsSplit,
+        subtotal: getSubtotal(),
+        total: getTotal(),
+    };
+}
+
+function sendOrder() {
+    const payload = buildCurrentOrderPayload();
+    if (!payload) return;
+
+    pendingOrderPayload = payload;
+    currentOrderId = payload.order_id;
+    goToPay();
+}
+
+// ── PAYMENT ───────────────────────────────────────────────
+function selectPayMethod(method) {
+    selectedPayMethod = method;
+    ['apple','google'].forEach(m => {
+        document.getElementById(`pay-${m}`).classList.toggle('selected', m === method);
+    });
+}
+
+function processPayment() {
+    if (!pendingOrderPayload) {
+        showToast('Build your order before paying');
+        return;
+    }
+
+    const method = selectedPayMethod;
+    const walletLabel = method === 'apple' ? 'Apple Pay' : 'Google Pay';
+
+    const btn = document.getElementById('btnPay');
+    btn.textContent = `Processing ${walletLabel}…`;
+    btn.disabled = true;
+
+    setTimeout(() => {
+        socket.emit('customer_payment', {
+            table_id: TABLE_ID,
+            order_id: pendingOrderPayload.order_id,
+            method: walletLabel,
+            total: pendingOrderPayload.total,
+        });
+        socket.emit('submit_customer_order', pendingOrderPayload);
+
+        sentOrders.unshift(pendingOrderPayload.order_id);
+        document.getElementById('orderRef').textContent = `#${pendingOrderPayload.order_id}`;
+        goToScreen('confirm');
+        resetProgressDots();
+        updateOrderStatus('preparing');
+        renderLoadSummary('confirmLoadSummary');
+
+        cart = {};
+        pendingOrderPayload = null;
+        document.getElementById('orderNotes').value = '';
+        updateCartPill();
+        renderMenu();
+        renderCart();
+
+        showToast(`${walletLabel} payment confirmed. Order sent!`);
+        btn.textContent = 'Pay and Send Order';
+        btn.disabled = false;
+    }, 1800);
+}
+
+// ── ORDER STATUS ──────────────────────────────────────────
+const STATUS_STEPS = [
+    { key: 'preparing', icon: '👨‍🍳', label: 'Kitchen is preparing your order…' },
+    { key: 'dispatched', icon: '🤖', label: 'Robot has left the kitchen.' },
+    { key: 'waiter', icon: '🧑‍🍳', label: 'Waiter is approaching with your dishes.' },
+    { key: 'arrived', icon: '🛎️', label: 'Your order has arrived. Please take your dishes.' },
+    { key: 'paid', icon: '✅', label: 'Payment confirmed. Thank you!' },
+];
+let currentStep = 0;
+
+function resetProgressDots() {
+    currentStep = 0;
+    document.getElementById('statusIcon').textContent = STATUS_STEPS[0].icon;
+    document.getElementById('statusVal').textContent = STATUS_STEPS[0].label;
+    const dots = document.querySelectorAll('.dot');
+    dots.forEach((d, i) => d.classList.toggle('active', i === 0));
+}
+
+function updateOrderStatus(key, etaSeconds, robotId) {
+    const idx = STATUS_STEPS.findIndex(s => s.key === key);
+    if (idx < 0) return;
+    currentStep = idx;
+    const step = STATUS_STEPS[idx];
+    document.getElementById('statusIcon').textContent = step.icon;
+    let label = step.label;
+    if (key === 'waiter' && etaSeconds) label = `Waiter is approaching in ~${etaSeconds}s`;
+    if (key === 'arrived' && robotId) label = `Your food is here on ${robotId}. Please take your dishes.`;
+    document.getElementById('statusVal').textContent = label;
+    const dots = document.querySelectorAll('.dot');
+    dots.forEach((d, i) => d.classList.toggle('active', i <= idx));
+    if (key === 'dispatched') {
+        showToast('Robot has left the kitchen');
+    }
+    if (key === 'waiter') {
+        showToast(`Waiter is approaching in ~${etaSeconds}s`);
+    }
+    if (key === 'arrived') {
+        showToast('Your food is here');
+    }
+}
+
+function completePickup() {
+    document.getElementById('pickupDoneBtn').classList.remove('visible');
+    updateOrderStatus('arrived');
+    showToast('Enjoy your meal!');
+}
+
+// ── SCREEN NAVIGATION ─────────────────────────────────────
+function goToScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(`screen-${name}`).classList.add('active');
+
+    if (name === 'cart') { renderCart(); }
+    if (name === 'pay') {
+        pendingOrderPayload = buildCurrentOrderPayload();
+        if (!pendingOrderPayload) {
+            goToScreen('cart');
+            return;
+        }
+        renderOrderSummary('paySummary', pendingOrderPayload);
+        document.getElementById('payAmount').textContent = `€${pendingOrderPayload.total.toFixed(2)}`;
+        document.getElementById('paySubtitle').textContent = `Table ${TABLE_ID} · ${Object.values(cart).reduce((a,b)=>a+b,0)} items · ${SERVICE_MODE}`;
+    }
+}
+
+// Hook up the cart → pay flow properly
+document.getElementById('btnSendOrder').addEventListener('click', () => {}, false); // handled inline
+
+// Override: send order goes to confirm, pay is separate
+// Allow pay from confirmation screen
+function goToPay() {
+    goToScreen('pay');
+}
+
+// ── TOAST ─────────────────────────────────────────────────
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── Previous orders banner ────────────────────────────────
+socket.on('order_confirmed', (data) => {
+    if (data.table_id === TABLE_ID) {
+        const banner = document.getElementById('prevOrdersBanner');
+        banner.style.display = 'block';
+        const previous = sentOrders.length > 1 ? `<br>${sentOrders.length} active orders placed from this table.` : '';
+        banner.innerHTML = `<strong>Order ${data.order_id}</strong> received by kitchen — already cooking! 🔥${previous}`;
+    }
+});
+</script>
+</body>
+</html>
+
