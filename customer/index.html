@@ -659,6 +659,20 @@ socket.on('customer_pickup_alert', (payload) => {
     }
 });
 
+// Robot has parked at the table and the WAITING_PICKUP_CONFIRM window is
+// open. For Zone A (customer self-service) this is the moment we tell the
+// guest "your dishes are here, please collect them". The bot will return to
+// base automatically once the PUDU tray sensor (or the mock-mode timer)
+// detects the dishes were taken; no customer action is strictly required.
+socket.on('customer_pickup_window', (payload) => {
+    if (parseInt(payload.table_id, 10) === TABLE_ID && TABLE_ZONE === 'A') {
+        updateOrderStatus('arrived', null, payload.robot_id);
+        document.getElementById('pickupDoneBtn').classList.add('visible');
+        if (navigator.vibrate) navigator.vibrate([500, 200, 500, 200, 500]);
+        showToast('Your robot has arrived - please take your dishes');
+    }
+});
+
 // ── INIT ─────────────────────────────────────────────────
 function applyTableId(n) {
     TABLE_ID = n;

@@ -36,6 +36,11 @@
         .fb-late { background: #f59e0b; color: white; }
         .fb-cold { background: #ef4444; color: white; }
 
+        .unload-btn { width: 100%; padding: 18px 0; border: none; border-radius: 14px; font-weight: 800; font-size: 1.1rem; cursor: pointer; background: var(--success); color: white; box-shadow: 0 4px 10px rgba(16,185,129,0.35); display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; transition: transform 0.1s; animation: pulse 1.4s infinite; }
+        .unload-btn:active { transform: scale(0.97); }
+        .unload-btn span { font-size: 1.6rem; }
+        .arrived-banner { font-size: 0.85rem; color: var(--success); font-weight: 700; text-align: center; margin-top: -8px; margin-bottom: 6px; letter-spacing: 0.5px; }
+
         @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
     </style>
@@ -79,8 +84,23 @@
         });
         
         socket.on('robot_dispatched', (payload) => {
-            activeTasks.push({ id: payload.task_id, table_id: payload.table_id, robot_id: payload.robot_id, timeLeft: payload.eta_seconds });
+            activeTasks.push({ id: payload.task_id, table_id: payload.table_id, robot_id: payload.robot_id, timeLeft: payload.eta_seconds, awaitingUnload: false, unloaded: false });
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]); 
+            renderTasks();
+        });
+
+        socket.on('robot_arrived_at_table', (payload) => {
+            const tableId = parseInt(payload.table_id);
+            const robotId = payload.robot_id;
+            let task = activeTasks.find(t => t.table_id === tableId && t.robot_id === robotId);
+            if (!task) {
+                task = { id: 'arr-' + tableId + '-' + Date.now(), table_id: tableId, robot_id: robotId, timeLeft: 0, awaitingUnload: true, unloaded: false };
+                activeTasks.push(task);
+            } else {
+                task.timeLeft = 0;
+                task.awaitingUnload = true;
+            }
+            if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
             renderTasks();
         });
 
@@ -124,11 +144,14 @@
             // Render ALL tasks sequentially (no slice limit)
             activeTasks.forEach((task, index) => {
                 const isUrgent = task.timeLeft > 0 && task.timeLeft <= 15;
-                const isArrived = task.timeLeft <= 0;
-                
+                const isArrived = task.awaitingUnload || task.unloaded || task.timeLeft <= 0;
+
                 let cardClass = 'task-card' + (isUrgent ? ' urgent' : '') + (isArrived ? ' arrived' : '');
-                let timeString = isArrived ? "ARRIVED!" : task.timeLeft + "s";
-                
+                let timeString;
+                if (task.awaitingUnload) timeString = "AT TABLE";
+                else if (task.timeLeft <= 0) timeString = "ARRIVED!";
+                else timeString = task.timeLeft + "s";
+
                 let card = document.getElementById('task-' + task.id);
 
                 if (!card) {
@@ -141,7 +164,7 @@
                             <span style="background:#e2e8f0; padding:4px 8px; border-radius:12px; font-size:0.85rem; font-weight:bold; color:#475569;">🤖 ${task.robot_id}</span>
                         </div>
                         <div class="timer-display">${timeString}</div>
-                        <div class="feedback-container"></div>
+                        <div class="action-container"></div>
                     `;
                     listEl.appendChild(card);
                 } else {
@@ -149,29 +172,52 @@
                     card.querySelector('.timer-display').innerText = timeString;
                 }
 
-                const feedbackBox = card.querySelector('.feedback-container');
-                if (isArrived && feedbackBox.innerHTML === '') {
-                    feedbackBox.innerHTML = `
-                        <div style="text-align:center; font-size:0.75rem; color:#64748b; font-weight:bold; margin-bottom:5px;">RATE RENDEZVOUS</div>
-                        <div class="feedback-grid">
-                            <button class="feedback-btn fb-perfect" onclick="sendFeedback('${task.id}', ${task.table_id}, 'perfect')">
-                                <span>👍</span> OK
-                            </button>
-                            <button class="feedback-btn fb-early" onclick="sendFeedback('${task.id}', ${task.table_id}, 'early')">
-                                <span>👎</span> Early
-                            </button>
-                            <button class="feedback-btn fb-late" onclick="sendFeedback('${task.id}', ${task.table_id}, 'late')">
-                                <span>👎</span> Late
-                            </button>
-                            <button class="feedback-btn fb-cold" onclick="sendFeedback('${task.id}', ${task.table_id}, 'cold')">
-                                <span>🧊</span> Cold
-                            </button>
-                        </div>
+                const actionBox = card.querySelector('.action-container');
+                if (task.awaitingUnload) {
+                    actionBox.innerHTML = `
+                        <div class="arrived-banner">ROBOT AT TABLE - UNLOAD THE TRAY</div>
+                        <button class="unload-btn" onclick="confirmTrayUnloaded('${task.id}', ${task.table_id}, '${task.robot_id}')">
+                            <span>✅</span> Tray Unloaded
+                        </button>
                     `;
+                } else if (task.unloaded) {
+                    if (!actionBox.dataset.feedback) {
+                        actionBox.dataset.feedback = '1';
+                        actionBox.innerHTML = `
+                            <div style="text-align:center; font-size:0.75rem; color:#64748b; font-weight:bold; margin-bottom:5px;">RATE RENDEZVOUS</div>
+                            <div class="feedback-grid">
+                                <button class="feedback-btn fb-perfect" onclick="sendFeedback('${task.id}', ${task.table_id}, 'perfect')">
+                                    <span>👍</span> OK
+                                </button>
+                                <button class="feedback-btn fb-early" onclick="sendFeedback('${task.id}', ${task.table_id}, 'early')">
+                                    <span>👎</span> Early
+                                </button>
+                                <button class="feedback-btn fb-late" onclick="sendFeedback('${task.id}', ${task.table_id}, 'late')">
+                                    <span>👎</span> Late
+                                </button>
+                                <button class="feedback-btn fb-cold" onclick="sendFeedback('${task.id}', ${task.table_id}, 'cold')">
+                                    <span>🧊</span> Cold
+                                </button>
+                            </div>
+                        `;
+                    }
+                } else {
+                    actionBox.innerHTML = '';
+                    delete actionBox.dataset.feedback;
                 }
 
                 card.style.order = index;
             });
+        }
+
+        function confirmTrayUnloaded(taskId, tableId, robotId) {
+            socket.emit('waiter_tray_unloaded', { table_id: tableId, robot_id: robotId });
+            const task = activeTasks.find(t => t.id === taskId);
+            if (task) {
+                task.awaitingUnload = false;
+                task.unloaded = true;
+            }
+            renderTasks();
         }
 
         function sendFeedback(taskId, tableId, feedbackType) {

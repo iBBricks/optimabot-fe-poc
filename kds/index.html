@@ -461,6 +461,8 @@
                     bgColor = '#e0e7ff'; textColor = '#4338ca'; icon = '🚶'; label = `Delivering to ${info.target}`;
                 } else if (info.state === 'Fetching') {
                     bgColor = '#fef9c3'; textColor = '#854d0e'; icon = '🍽️'; label = 'Fetching at kitchen';
+                } else if (info.state === 'Waiting_pickup_confirm') {
+                    bgColor = '#fce7f3'; textColor = '#9d174d'; icon = '⏳'; label = `Waiting pickup at ${info.target}`;
                 } else {
                     bgColor = '#dcfce7'; textColor = '#166534'; icon = '↩️'; label = 'Returning to base';
                 }
