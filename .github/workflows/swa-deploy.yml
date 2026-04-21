@@ -19,14 +19,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject backend URL into config.js files
-        run: |
-          BACKEND_URL="https://ca-optimabot-be-poc.bravedesert-6026246e.westeurope.azurecontainerapps.io"
-          sed -i "s|__BACKEND_URL__|${BACKEND_URL}|g" customer/config.js
-          sed -i "s|__BACKEND_URL__|${BACKEND_URL}|g" waiter/config.js
-          sed -i "s|__BACKEND_URL__|${BACKEND_URL}|g" kds/config.js
-          echo "Backend URL injected: ${BACKEND_URL}"
-
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
