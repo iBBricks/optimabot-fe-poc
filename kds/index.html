@@ -502,6 +502,9 @@
         });
 
         socket.on('kds_new_order', (orderData) => {
+            // #region agent log
+            _dbg('kds_new_order received', {orderData, tableId: parseInt(orderData.table_id), tablesCount: tables.length}, 'H-E');
+            // #endregion
             const tableId = parseInt(orderData.table_id);
             const table = tables.find(t => t.id === tableId);
             

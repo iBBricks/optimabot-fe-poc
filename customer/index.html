@@ -963,6 +963,9 @@ function processPayment() {
             method: walletLabel,
             total: pendingOrderPayload.total,
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7783/ingest/753e7717-486b-48f5-b510-b426d15b11f2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6c0e34'},body:JSON.stringify({sessionId:'6c0e34',location:'customer/index.html:966',message:'submit_customer_order emitted',data:{table_id:TABLE_ID,order_id:pendingOrderPayload?.order_id,size:pendingOrderPayload?.size,tray_units:pendingOrderPayload?.tray_units,payload_keys:Object.keys(pendingOrderPayload||{})},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         socket.emit('submit_customer_order', pendingOrderPayload);
 
         sentOrders.unshift(pendingOrderPayload.order_id);
