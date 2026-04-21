@@ -230,7 +230,7 @@
 
         socket.on('connect', () => {
             // #region agent log
-            _dbg('KDS socket connected', {sid: socket.id, transport: socket.io.engine.transport.name}, 'H-A');
+            console.log('[DBG-6c0e34][H-E] KDS socket CONNECTED', {sid: socket.id, transport: socket.io.engine.transport.name, serverUrl});
             // #endregion
             syncHardwareBinding();
         });
@@ -503,7 +503,7 @@
 
         socket.on('kds_new_order', (orderData) => {
             // #region agent log
-            _dbg('kds_new_order received', {orderData, tableId: parseInt(orderData.table_id), tablesCount: tables.length}, 'H-E');
+            console.log('[DBG-6c0e34][H-E] kds_new_order received', {orderData, parsedTableId: parseInt(orderData.table_id), tablesCount: tables.length});
             // #endregion
             const tableId = parseInt(orderData.table_id);
             const table = tables.find(t => t.id === tableId);

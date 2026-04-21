@@ -964,9 +964,20 @@ function processPayment() {
             total: pendingOrderPayload.total,
         });
         // #region agent log
-        fetch('http://127.0.0.1:7783/ingest/753e7717-486b-48f5-b510-b426d15b11f2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6c0e34'},body:JSON.stringify({sessionId:'6c0e34',location:'customer/index.html:966',message:'submit_customer_order emitted',data:{table_id:TABLE_ID,order_id:pendingOrderPayload?.order_id,size:pendingOrderPayload?.size,tray_units:pendingOrderPayload?.tray_units,payload_keys:Object.keys(pendingOrderPayload||{})},timestamp:Date.now()})}).catch(()=>{});
+        console.log('[DBG-6c0e34][H-A] About to emit submit_customer_order', {
+            connected: socket.connected,
+            socketId: socket.id,
+            payload: pendingOrderPayload,
+            payloadKeys: Object.keys(pendingOrderPayload || {}),
+            tray_units: pendingOrderPayload?.tray_units,
+            tray_units_type: typeof pendingOrderPayload?.tray_units,
+        });
         // #endregion
-        socket.emit('submit_customer_order', pendingOrderPayload);
+        socket.emit('submit_customer_order', pendingOrderPayload, (ack) => {
+            // #region agent log
+            console.log('[DBG-6c0e34][H-A] submit_customer_order ACK from server', ack);
+            // #endregion
+        });
 
         sentOrders.unshift(pendingOrderPayload.order_id);
         document.getElementById('orderRef').textContent = `#${pendingOrderPayload.order_id}`;
