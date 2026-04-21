@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <title>Optimabot Order &amp; Pay</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <script src="/customer/config.js"></script>
+    <script src="config.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         :root {
@@ -350,6 +350,58 @@
         }
         .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+        /* ── Table Picker ── */
+        .change-table-btn {
+            font-size: 0.72rem; font-weight: 600;
+            background: rgba(255,255,255,0.18); color: #faf7f2;
+            border: 1px solid rgba(255,255,255,0.35); border-radius: 8px;
+            padding: 3px 10px; cursor: pointer; margin-top: 4px;
+            display: inline-block; letter-spacing: 0.02em;
+        }
+        .change-table-btn:active { background: rgba(255,255,255,0.28); }
+
+        .table-picker-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(26,18,8,0.7); z-index: 1000;
+            align-items: center; justify-content: center;
+        }
+        .table-picker-overlay.open { display: flex; }
+        .table-picker-modal {
+            background: #fff; border-radius: 20px; padding: 24px 20px;
+            width: calc(100% - 40px); max-width: 380px;
+        }
+        .table-picker-modal h3 {
+            font-size: 1rem; font-weight: 700; color: var(--ink);
+            margin-bottom: 6px; text-align: center;
+        }
+        .table-picker-modal p {
+            font-size: 0.78rem; color: var(--ink-soft);
+            text-align: center; margin-bottom: 16px;
+        }
+        .table-zone-label {
+            font-size: 0.72rem; font-weight: 700; color: var(--ink-soft);
+            letter-spacing: 0.08em; text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .table-grid-picker {
+            display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;
+            margin-bottom: 14px;
+        }
+        .tbl-btn {
+            aspect-ratio: 1; border-radius: 10px; border: none;
+            font-size: 0.9rem; font-weight: 700; cursor: pointer;
+            transition: all 0.15s;
+        }
+        .tbl-btn.zone-a { background: #dbeafe; color: #1d4ed8; }
+        .tbl-btn.zone-b { background: #dcfce7; color: #166534; }
+        .tbl-btn.active { outline: 3px solid var(--accent); }
+        .tbl-btn:active { transform: scale(0.92); }
+        .picker-cancel-btn {
+            width: 100%; padding: 11px; border: 1.5px solid var(--border);
+            border-radius: 12px; background: transparent; color: var(--ink-soft);
+            font-size: 0.88rem; font-weight: 600; cursor: pointer;
+        }
+
         .divider { height: 1px; background: var(--border); width: 100%; }
 
         .tip-selector { display: flex; gap: 6px; }
@@ -399,12 +451,26 @@
         <div>
             <div class="header-brand">Optimabot</div>
             <div class="header-table" id="tableLabel">Table —</div>
+            <button class="change-table-btn" onclick="openTablePicker()">Change Table</button>
         </div>
         <button class="cart-pill" id="cartBtn" onclick="goToScreen('cart')">
             🛒 <span id="cartTotal">€0.00</span>
             <span class="cart-badge" id="cartCount">0</span>
         </button>
     </header>
+
+    <!-- ── Table Picker Modal ── -->
+    <div class="table-picker-overlay" id="tablePickerOverlay" onclick="closeTablePickerIfBg(event)">
+        <div class="table-picker-modal">
+            <h3>Select Your Table</h3>
+            <p>Zone A = robot self-service &nbsp;·&nbsp; Zone B = waiter service</p>
+            <div class="table-zone-label">Zone A — Robot serve (1–6)</div>
+            <div class="table-grid-picker" id="zoneAButtons"></div>
+            <div class="table-zone-label">Zone B — Waiter serve (7–12)</div>
+            <div class="table-grid-picker" id="zoneBButtons"></div>
+            <button class="picker-cancel-btn" onclick="closeTablePicker()">Cancel</button>
+        </div>
+    </div>
 
     <!-- ── MENU SCREEN ── -->
     <div class="screen active" id="screen-menu">
@@ -518,14 +584,14 @@
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
-const TABLE_ID = parseInt(new URLSearchParams(window.location.search).get('table') || '1');
+let TABLE_ID = parseInt(new URLSearchParams(window.location.search).get('table') || '1');
 const SERVER_URL = (window.OPTIMABOT_BACKEND_URL && window.OPTIMABOT_BACKEND_URL !== '__BACKEND_URL__')
     ? window.OPTIMABOT_BACKEND_URL
     : (window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin);
 const VAT_RATE = 0.10; // 10% IVA
 const ROBOT_TRAY_CAPACITY = 4;
-const TABLE_ZONE = TABLE_ID <= 6 ? 'A' : 'B';
-const SERVICE_MODE = TABLE_ZONE === 'A' ? 'Robot serve' : 'Waiter serve';
+let TABLE_ZONE = TABLE_ID <= 6 ? 'A' : 'B';
+let SERVICE_MODE = TABLE_ZONE === 'A' ? 'Robot serve' : 'Waiter serve';
 
 // ── MENU DATA ────────────────────────────────────────────
 const MENU = [
@@ -594,6 +660,48 @@ socket.on('customer_pickup_alert', (payload) => {
 });
 
 // ── INIT ─────────────────────────────────────────────────
+function applyTableId(n) {
+    TABLE_ID = n;
+    TABLE_ZONE = n <= 6 ? 'A' : 'B';
+    SERVICE_MODE = TABLE_ZONE === 'A' ? 'Robot serve' : 'Waiter serve';
+    document.getElementById('tableLabel').textContent = `Table ${TABLE_ID} · Zone ${TABLE_ZONE} (${SERVICE_MODE})`;
+    document.title = `Order — Table ${TABLE_ID}`;
+    // Refresh picker button states without reopening
+    document.querySelectorAll('.tbl-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.table, 10) === TABLE_ID);
+    });
+    showToast(`Table ${TABLE_ID} selected`);
+}
+
+function openTablePicker() {
+    // Build buttons once
+    const zoneA = document.getElementById('zoneAButtons');
+    const zoneB = document.getElementById('zoneBButtons');
+    if (!zoneA.hasChildNodes()) {
+        for (let i = 1; i <= 12; i++) {
+            const btn = document.createElement('button');
+            btn.className = `tbl-btn ${i <= 6 ? 'zone-a' : 'zone-b'}${i === TABLE_ID ? ' active' : ''}`;
+            btn.dataset.table = i;
+            btn.textContent = i;
+            btn.onclick = () => { applyTableId(i); closeTablePicker(); };
+            (i <= 6 ? zoneA : zoneB).appendChild(btn);
+        }
+    } else {
+        document.querySelectorAll('.tbl-btn').forEach(btn => {
+            btn.classList.toggle('active', parseInt(btn.dataset.table, 10) === TABLE_ID);
+        });
+    }
+    document.getElementById('tablePickerOverlay').classList.add('open');
+}
+
+function closeTablePicker() {
+    document.getElementById('tablePickerOverlay').classList.remove('open');
+}
+
+function closeTablePickerIfBg(e) {
+    if (e.target === document.getElementById('tablePickerOverlay')) closeTablePicker();
+}
+
 document.getElementById('tableLabel').textContent = `Table ${TABLE_ID} · Zone ${TABLE_ZONE} (${SERVICE_MODE})`;
 document.title = `Order — Table ${TABLE_ID}`;
 
@@ -971,5 +1079,3 @@ socket.on('order_confirmed', (data) => {
 </script>
 </body>
 </html>
-
-

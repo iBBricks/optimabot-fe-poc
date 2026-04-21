@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Optimabot KDS</title>
-    <script src="/kds/config.js"></script>
+    <script src="config.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         :root { --bg: #f8fafc; --card: #ffffff; --primary: #3b82f6; --ready: #22c55e; --preparing: #f59e0b; --text: #0f172a; }
@@ -108,17 +108,17 @@
                 <div style="margin-bottom: 15px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
                         <span>Waiter Alert Timer (Zone A):</span>
-                        <span id="p-alert-a" style="font-weight: bold; color: var(--text);">30s</span>
+                        <span id="p-alert-a" style="font-weight: bold; color: var(--text);">5s</span>
                     </div>
-                    <input type="range" id="slider-alert-a" min="0" max="120" step="5" value="30" style="width: 100%; cursor: pointer;" oninput="updateParamFromSlider('alertA', this.value)">
+                    <input type="range" id="slider-alert-a" min="0" max="120" step="5" value="5" style="width: 100%; cursor: pointer;" oninput="updateParamFromSlider('alertA', this.value)">
                 </div>
 
                 <div style="margin-bottom: 5px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
                         <span>Waiter Alert Timer (Zone B):</span>
-                        <span id="p-alert-b" style="font-weight: bold; color: var(--text);">30s</span>
+                        <span id="p-alert-b" style="font-weight: bold; color: var(--text);">5s</span>
                     </div>
-                    <input type="range" id="slider-alert-b" min="0" max="120" step="5" value="30" style="width: 100%; cursor: pointer;" oninput="updateParamFromSlider('alertB', this.value)">
+                    <input type="range" id="slider-alert-b" min="0" max="120" step="5" value="5" style="width: 100%; cursor: pointer;" oninput="updateParamFromSlider('alertB', this.value)">
                 </div>
             </div>
 
@@ -139,6 +139,10 @@
                             <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Map Name:</label>
                             <input type="text" id="testMap" placeholder="e.g. map1" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_map', this.value)">
                         </div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Kitchen Point:</label>
+                            <input type="text" id="testKitchen" placeholder="e.g. Kitchen" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_kitchen', this.value)">
+                        </div>
                         <div id="bindingStatusCard" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
                             <div style="font-size: 0.75rem; font-weight: bold; color: #475569; margin-bottom: 6px;">Active Robot-1 Binding</div>
                             <div id="bindingStatusText" style="font-size: 0.78rem; color: #64748b; line-height: 1.4;">Waiting for server status...</div>
@@ -153,6 +157,10 @@
                         <div style="margin-bottom: 8px;">
                             <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Map Name:</label>
                             <input type="text" id="testMap2" placeholder="e.g. map1" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_map_2', this.value)">
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 0.75rem; font-weight: bold; color: #64748b;">Kitchen Point:</label>
+                            <input type="text" id="testKitchen2" placeholder="e.g. Kitchen" style="padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit;" oninput="handleHardwareInput('pudu_kitchen_2', this.value)">
                         </div>
                         <div id="bindingStatusCard2" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
                             <div style="font-size: 0.75rem; font-weight: bold; color: #475569; margin-bottom: 6px;">Active Robot-2 Binding</div>
@@ -173,22 +181,29 @@
         const serverUrl = (window.OPTIMABOT_BACKEND_URL && window.OPTIMABOT_BACKEND_URL !== '__BACKEND_URL__')
             ? window.OPTIMABOT_BACKEND_URL
             : (window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin);
+
+        // #region agent log
+        const _dbg = (msg, data, hyp) => fetch('http://127.0.0.1:7783/ingest/753e7717-486b-48f5-b510-b426d15b11f2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4e7bad'},body:JSON.stringify({sessionId:'4e7bad',location:'kds/index.html',message:msg,data:data,hypothesisId:hyp,timestamp:Date.now()})}).catch(()=>{});
+        _dbg('KDS init', {serverUrl, backendUrlVar: window.OPTIMABOT_BACKEND_URL, origin: window.location.origin}, 'H-D');
+        // #endregion
+
         const socket = io(serverUrl, { transports: ['websocket', 'polling'] });
         let tables = [];
         let selectedTableId = null;
         let currentFleetTotal = 2;
         let currentLookahead = 45;
-        let currentAlertA = 30;
-        let currentAlertB = 30;
+        let currentAlertA = 5;
+        let currentAlertB = 5;
         
         const sizeMap = {1: 'S (1 Tray)', 2: 'M (2 Trays)', 3: 'L (3 Trays)', 4: 'XL (4 Trays)'};
 
-        // NEW: Load cached hardware tester parameters on page load
         window.onload = () => {
             if(sessionStorage.getItem('pudu_sn')) document.getElementById('testSn').value = sessionStorage.getItem('pudu_sn');
             if(sessionStorage.getItem('pudu_map')) document.getElementById('testMap').value = sessionStorage.getItem('pudu_map');
+            if(sessionStorage.getItem('pudu_kitchen')) document.getElementById('testKitchen').value = sessionStorage.getItem('pudu_kitchen');
             if(sessionStorage.getItem('pudu_sn_2')) document.getElementById('testSn2').value = sessionStorage.getItem('pudu_sn_2');
             if(sessionStorage.getItem('pudu_map_2')) document.getElementById('testMap2').value = sessionStorage.getItem('pudu_map_2');
+            if(sessionStorage.getItem('pudu_kitchen_2')) document.getElementById('testKitchen2').value = sessionStorage.getItem('pudu_kitchen_2');
             if(sessionStorage.getItem('pudu_point')) document.getElementById('testPoint').value = sessionStorage.getItem('pudu_point');
             syncHardwareBinding();
         };
@@ -202,18 +217,29 @@
             socket.emit('configure_robot_binding', {
                 robotName: 'Robot-1',
                 sn: document.getElementById('testSn').value.trim(),
-                mapName: document.getElementById('testMap').value.trim()
+                mapName: document.getElementById('testMap').value.trim(),
+                kitchenPoint: document.getElementById('testKitchen').value.trim()
             });
             socket.emit('configure_robot_binding', {
                 robotName: 'Robot-2',
                 sn: document.getElementById('testSn2').value.trim(),
-                mapName: document.getElementById('testMap2').value.trim()
+                mapName: document.getElementById('testMap2').value.trim(),
+                kitchenPoint: document.getElementById('testKitchen2').value.trim()
             });
         }
 
         socket.on('connect', () => {
+            // #region agent log
+            _dbg('KDS socket connected', {sid: socket.id, transport: socket.io.engine.transport.name}, 'H-A');
+            // #endregion
             syncHardwareBinding();
         });
+
+        // #region agent log
+        socket.on('connect_error', (err) => {
+            _dbg('KDS socket connect_error', {message: err.message, type: err.type, description: String(err.description)}, 'H-A');
+        });
+        // #endregion
 
         socket.on('hardware_binding_status', (binding) => {
             const text = binding?.robotName === 'Robot-2'
@@ -221,7 +247,10 @@
                 : document.getElementById('bindingStatusText');
             const hasBinding = binding?.sn && binding?.mapName;
             if (hasBinding) {
-                text.innerHTML = `<strong>${binding.robotName}</strong><br>SN: ${binding.sn}<br>Map: ${binding.mapName}`;
+                const kitchenLine = binding.kitchenPoint
+                    ? `<br>Kitchen: ${binding.kitchenPoint}`
+                    : '';
+                text.innerHTML = `<strong>${binding.robotName}</strong><br>SN: ${binding.sn}<br>Map: ${binding.mapName}${kitchenLine}`;
                 text.style.color = '#166534';
             } else {
                 text.textContent = `${binding?.robotName || 'Robot'} is not fully bound yet. Enter SN and Map Name to activate it.`;
@@ -319,15 +348,50 @@
             const table = tables.find(t => t.id === selectedTableId);
             table.status = 'ready';
             const isCrossZoneEnabled = document.getElementById('crossZoneToggle').checked;
+            const banner = document.getElementById('expeditorAlert');
 
-            await fetch('/api/order-update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    table_id: table.id, status: "ready", size: table.size, 
-                    force_cross_zone: isCrossZoneEnabled, system_state: tables 
-                })
-            });
+            banner.innerHTML = `⏳ Marking Table ${table.id} ready — dispatching robot...`;
+            banner.style.color = 'white';
+            banner.style.display = 'block';
+
+            // #region agent log
+            _dbg('markReady called', {tableId: table.id, size: table.size, crossZone: isCrossZoneEnabled, url: `${serverUrl}/api/v1/order-update`}, 'H-B');
+            // #endregion
+            try {
+                const resp = await fetch(`${serverUrl}/api/v1/order-update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        table_id: table.id, status: "ready", size: table.size, 
+                        force_cross_zone: isCrossZoneEnabled, system_state: tables 
+                    })
+                });
+                const body = await resp.json().catch(() => ({}));
+                // #region agent log
+                _dbg('markReady response', {status: resp.status, ok: resp.ok, body}, 'H-B');
+                // #endregion
+                if (resp.ok && body.dispatched_robot) {
+                    banner.innerHTML = `🤖 Robot ${body.dispatched_robot} dispatched to Table ${table.id}!`;
+                    banner.style.color = '#86efac';
+                } else if (resp.ok && body.action === 'queued') {
+                    banner.innerHTML = `⏳ Table ${table.id} queued — all robots busy.`;
+                    banner.style.color = '#facc15';
+                } else if (resp.ok) {
+                    banner.innerHTML = `✅ Table ${table.id} marked ready.`;
+                    banner.style.color = '#86efac';
+                } else {
+                    banner.innerHTML = `⚠️ Server error marking Table ${table.id} ready (${resp.status}).`;
+                    banner.style.color = '#fca5a5';
+                }
+                setTimeout(() => banner.style.display = 'none', 6000);
+            } catch(e) {
+                banner.innerHTML = `❌ Network error: ${e.message}`;
+                banner.style.color = '#fca5a5';
+                setTimeout(() => banner.style.display = 'none', 8000);
+                // #region agent log
+                _dbg('markReady fetch error', {error: e.message}, 'H-B');
+                // #endregion
+            }
             renderGrid(); selectTable(selectedTableId); 
         }
 
@@ -387,21 +451,25 @@
             }
         });
 
-        // NEW: Real-time UI updates for robot travel states (Delivering vs Returning)
         socket.on('robot_details_update', (details) => {
             const list = document.getElementById('activeRobotsList');
             list.innerHTML = '';
             for (let robotName in details) {
                 const info = details[robotName];
-                let bgColor = info.state === 'Delivering' ? '#e0e7ff' : '#dcfce7'; // Blue for delivery, Green for return
-                let textColor = info.state === 'Delivering' ? '#4338ca' : '#166534';
-                let icon = info.state === 'Delivering' ? '🚶' : '↩️';
+                let bgColor, textColor, icon, label;
+                if (info.state === 'Delivering') {
+                    bgColor = '#e0e7ff'; textColor = '#4338ca'; icon = '🚶'; label = `Delivering to ${info.target}`;
+                } else if (info.state === 'Fetching') {
+                    bgColor = '#fef9c3'; textColor = '#854d0e'; icon = '🍽️'; label = 'Fetching at kitchen';
+                } else {
+                    bgColor = '#dcfce7'; textColor = '#166534'; icon = '↩️'; label = 'Returning to base';
+                }
                 
                 list.innerHTML += `
                     <div style="background: ${bgColor}; padding: 8px; border-radius: 6px; font-size: 0.8rem; color: ${textColor}; display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-weight: bold;">🤖 ${robotName}</span>
                         <div style="text-align: right;">
-                            <div>${icon} ${info.state} to ${info.target}</div>
+                            <div>${icon} ${label}</div>
                             <div style="font-size: 0.75rem; opacity: 0.8;">ETA: ${info.timeLeft}s</div>
                         </div>
                     </div>
@@ -433,7 +501,6 @@
             if (selectedTableId) selectTable(selectedTableId);
         });
 
-        // NEW: Receive incoming paid orders from the Customer App
         socket.on('kds_new_order', (orderData) => {
             const tableId = parseInt(orderData.table_id);
             const table = tables.find(t => t.id === tableId);
@@ -441,11 +508,10 @@
             if (table) {
                 table.status = 'preparing';
                 table.size = orderData.size;
-                table.eta_seconds = 300; // Put 5 mins on the clock for the kitchen
+                table.eta_seconds = 300;
                 
                 renderGrid();
                 
-                // Flash an alert to the Kitchen Manager
                 const banner = document.getElementById('expeditorAlert');
                 const loadText = orderData.estimated_trays
                     ? `${orderData.estimated_trays} estimated trays / robot load ${orderData.size}`
@@ -461,5 +527,3 @@
     </script>
 </body>
 </html>
-
-
