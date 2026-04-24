@@ -45,6 +45,17 @@
         .control-btn { padding: 4px 10px; font-weight: bold; border-radius: 6px; border: 1px solid #cbd5e1; cursor:pointer; background: white; color: #475569; }
         .control-btn:active { background: #e2e8f0; }
         input[type=range] { accent-color: var(--primary); height: 6px; background: #e2e8f0; border-radius: 5px; outline: none; }
+
+        /* Robot Mode Toggle */
+        .mode-banner { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 0.85rem; font-weight: bold; transition: background .3s, border-color .3s, color .3s; border: 2px solid transparent; }
+        .mode-banner.mode-sim { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+        .mode-banner.mode-live { background: #dcfce7; color: #15803d; border-color: #86efac; }
+        .mode-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 7px; flex-shrink: 0; transition: background .3s, box-shadow .3s; }
+        .mode-banner.mode-sim .mode-dot { background: #94a3b8; }
+        .mode-banner.mode-live .mode-dot { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.25); }
+        .switch-live input:checked + .slider { background-color: #22c55e; }
+        .hardware-section { transition: border-color .3s, background .3s; }
+        .hardware-section.live-highlight { border: 2px solid #22c55e !important; background: #f0fdf4 !important; border-radius: 8px; }
     </style>
 </head>
 <body>
@@ -56,6 +67,19 @@
     </div>
 
     <div class="action-panel">
+
+        <!-- Robot Mode Toggle — sempre visibile -->
+        <div id="modeBanner" class="mode-banner mode-sim">
+            <div style="display:flex; align-items:center;">
+                <span class="mode-dot" id="modeDot"></span>
+                <span id="modeLabel">MODALITÀ SIMULAZIONE</span>
+            </div>
+            <label class="switch switch-live" style="margin:0;" title="Passa a bot reali / simulati">
+                <input type="checkbox" id="robotModeToggle" onchange="onRobotModeToggle(this.checked)">
+                <span class="slider"></span>
+            </label>
+        </div>
+
         <h2 id="selectedTableTitle">Select a Table</h2>
         
         <div id="actionButtons" style="display: none;">
@@ -126,7 +150,7 @@
         
         <div style="margin-top: auto; padding-top: 20px;">
             <hr style="margin: 0 0 15px 0; border: 0; border-top: 1px solid #e2e8f0;">
-            <div style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 15px; border-radius: 8px;">
+            <div id="hardwareTesterSection" class="hardware-section" style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 15px; border-radius: 8px;">
                 <strong style="color: var(--text);">Pudu Hardware Tester:</strong><br>
                 <div style="display:flex; flex-direction: column; gap: 8px; margin-top: 10px;">
                     <div style="background:#ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
@@ -518,6 +542,32 @@
             });
             renderGrid();
             if (selectedTableId) selectTable(selectedTableId);
+        });
+
+        function updateModeBanner(live) {
+            const banner = document.getElementById('modeBanner');
+            const label = document.getElementById('modeLabel');
+            const toggle = document.getElementById('robotModeToggle');
+            const hwSection = document.getElementById('hardwareTesterSection');
+            toggle.checked = live;
+            if (live) {
+                banner.className = 'mode-banner mode-live';
+                label.textContent = 'MODALITÀ LIVE';
+                if (hwSection) hwSection.className = 'hardware-section live-highlight';
+            } else {
+                banner.className = 'mode-banner mode-sim';
+                label.textContent = 'MODALITÀ SIMULAZIONE';
+                if (hwSection) hwSection.className = 'hardware-section';
+            }
+        }
+
+        function onRobotModeToggle(live) {
+            socket.emit('set_robot_mode', { live });
+            updateModeBanner(live);
+        }
+
+        socket.on('robot_mode_status', ({ live }) => {
+            updateModeBanner(live);
         });
 
         socket.on('kds_new_order', (orderData) => {
